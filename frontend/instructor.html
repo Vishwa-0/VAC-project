@@ -23,7 +23,8 @@
 <body>
     <div class="header">
         <div class="logo" onclick="location.href='/'">EduTrack</div>
-        <div class="user-info">
+        <div class="user-info" style="align-items: center; display: flex; gap: 16px;">
+            <button id="themeSwitcher" class="theme-switcher-btn" onclick="toggleTheme()" aria-label="Toggle Theme" style="background: transparent; border: 1px solid var(--border-color); border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 16px; transition: all 0.2s;">🌙</button>
             <span id="instructorNameDisplay">Instructor</span>
             <button class="logout-btn" onclick="logout()">Logout</button>
         </div>
@@ -35,34 +36,17 @@
             <!-- Courses List -->
             <div class="card">
                 <h3>My Courses</h3>
-                <div class="course-list">
-                    <div class="course-card active" onclick="selectInstructorCourse('devops')" id="icourse-devops">
-                        <div class="course-info">
-                            <h4>DevOps Masterclass</h4>
-                            <p>45 students enrolled</p>
-                        </div>
-                    </div>
-                    <div class="course-card" onclick="selectInstructorCourse('aws')" id="icourse-aws">
-                        <div class="course-info">
-                            <h4>AWS Cloud Computing</h4>
-                            <p>32 students enrolled</p>
-                        </div>
-                    </div>
-                    <div class="course-card" onclick="selectInstructorCourse('docker')" id="icourse-docker">
-                        <div class="course-info">
-                            <h4>Docker & Kubernetes</h4>
-                            <p>28 students enrolled</p>
-                        </div>
-                    </div>
+                <div class="course-list" id="instructorCourseList">
+                    <div class="loading">Loading courses...</div>
                 </div>
             </div>
             
             <!-- Quick Stats -->
             <div class="card">
                 <h3>Quick Stats</h3>
-                <div class="stat-list">
-                    <div class="progress-label">Total Students: <strong>105</strong></div>
-                    <div class="progress-label">Avg Completion: <strong>67%</strong></div>
+                <div class="stat-list" id="instructorStats">
+                    <div class="progress-label">Total Students: <strong id="instTotalStudents">--</strong></div>
+                    <div class="progress-label">Avg Completion: <strong id="instAvgCompletion">--</strong></div>
                     <div class="progress-label">Students At Risk: <strong class="risk-high" id="riskCountText">0</strong></div>
                 </div>
             </div>
@@ -82,49 +66,17 @@
             <div class="card">
                 <h3>Student Engagement Heatmap</h3>
                 <div id="heatmap">
-                    <div style="display: flex; gap: 4px; margin-bottom: 16px;">
-                        <div style="flex: 1; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-secondary);">Week 1</div>
-                        <div style="flex: 1; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-secondary);">Week 2</div>
-                        <div style="flex: 1; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-secondary);">Week 3</div>
-                        <div style="flex: 1; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-secondary);">Week 4</div>
-                    </div>
-                    <div class="heatmap-row" style="margin-bottom: 8px;">
-                        <span style="width: 100px; display: inline-block;">Rajesh Kumar</span>
-                        <div style="display: inline-block; width: calc(100% - 110px);">
-                            <span style="display: inline-block; width: 23%; background: #10b981; height: 24px; border-radius: 4px; margin-right: 2%;"></span>
-                            <span style="display: inline-block; width: 23%; background: #10b981; height: 24px; border-radius: 4px; margin-right: 2%;"></span>
-                            <span style="display: inline-block; width: 23%; background: #f59e0b; height: 24px; border-radius: 4px; margin-right: 2%;"></span>
-                            <span style="display: inline-block; width: 23%; background: #f59e0b; height: 24px; border-radius: 4px;"></span>
-                        </div>
-                    </div>
-                    <div class="heatmap-row" style="margin-bottom: 8px;">
-                        <span style="width: 100px; display: inline-block;">Priya Singh</span>
-                        <div style="display: inline-block; width: calc(100% - 110px);">
-                            <span style="display: inline-block; width: 23%; background: #10b981; height: 24px; border-radius: 4px; margin-right: 2%;"></span>
-                            <span style="display: inline-block; width: 23%; background: #10b981; height: 24px; border-radius: 4px; margin-right: 2%;"></span>
-                            <span style="display: inline-block; width: 23%; background: #10b981; height: 24px; border-radius: 4px; margin-right: 2%;"></span>
-                            <span style="display: inline-block; width: 23%; background: #ef4444; height: 24px; border-radius: 4px;"></span>
-                        </div>
-                    </div>
-                    <div class="heatmap-row">
-                        <span style="width: 100px; display: inline-block;">Ramesh Nair</span>
-                        <div style="display: inline-block; width: calc(100% - 110px);">
-                            <span style="display: inline-block; width: 23%; background: #10b981; height: 24px; border-radius: 4px; margin-right: 2%;"></span>
-                            <span style="display: inline-block; width: 23%; background: #f59e0b; height: 24px; border-radius: 4px; margin-right: 2%;"></span>
-                            <span style="display: inline-block; width: 23%; background: #ef4444; height: 24px; border-radius: 4px; margin-right: 2%;"></span>
-                            <span style="display: inline-block; width: 23%; background: #ef4444; height: 24px; border-radius: 4px;"></span>
-                        </div>
-                    </div>
+                    <div class="loading">Loading engagement heatmap...</div>
                 </div>
                 <div style="margin-top: 16px; font-size: 12px; color: var(--text-secondary); display: flex; gap: 16px; align-items: center;">
                     <span style="display: flex; align-items: center; gap: 4px;">
-                        <span style="display: inline-block; width: 16px; height: 12px; background: #10b981; border-radius: 2px;"></span> Active
+                        <span style="display: inline-block; width: 16px; height: 12px; background: #10b981; border-radius: 2px;"></span> Active (>= 3 activities/week)
                     </span>
                     <span style="display: flex; align-items: center; gap: 4px;">
-                        <span style="display: inline-block; width: 16px; height: 12px; background: #f59e0b; border-radius: 2px;"></span> Warning
+                        <span style="display: inline-block; width: 16px; height: 12px; background: #f59e0b; border-radius: 2px;"></span> Warning (1-2 activities/week)
                     </span>
                     <span style="display: flex; align-items: center; gap: 4px;">
-                        <span style="display: inline-block; width: 16px; height: 12px; background: #ef4444; border-radius: 2px;"></span> Inactive
+                        <span style="display: inline-block; width: 16px; height: 12px; background: #ef4444; border-radius: 2px;"></span> Inactive (0 activities/week)
                     </span>
                 </div>
             </div>
@@ -133,21 +85,15 @@
             <div class="card">
                 <h3>Course Quiz Success Rates</h3>
                 <div id="quizAnalytics">
-                    <div class="skill-item">
-                        <span class="skill-name">Docker vs VM</span>
-                        <div class="skill-bar"><div class="skill-bar-fill" style="width: 45%"></div></div>
-                        <span class="skill-count">45% Correct</span>
-                    </div>
-                    <div class="skill-item">
-                        <span class="skill-name">Kubernetes Pods</span>
-                        <div class="skill-bar"><div class="skill-bar-fill" style="width: 28%"></div></div>
-                        <span class="skill-count">28% Correct [Warning]</span>
-                    </div>
-                    <div class="skill-item">
-                        <span class="skill-name">Docker Compose</span>
-                        <div class="skill-bar"><div class="skill-bar-fill" style="width: 62%"></div></div>
-                        <span class="skill-count">62% Correct</span>
-                    </div>
+                    <div class="loading">Loading quiz success metrics...</div>
+                </div>
+            </div>
+            
+            <!-- Repetitive Queries Insight -->
+            <div class="card">
+                <h3>Repetitive Queries Insight</h3>
+                <div id="repetitiveQueries">
+                    <div class="loading">Loading repetitive query trends...</div>
                 </div>
             </div>
             

@@ -14,10 +14,10 @@
     <nav class="navbar">
         <div class="nav-container">
             <div class="logo" onclick="location.href='/'">EduTrack</div>
-            <div class="nav-links">
+            <div class="nav-links" style="align-items: center; display: flex; gap: 20px;">
                 <a href="#" onclick="openAuthModal('student')">Student Portal</a>
                 <a href="#" onclick="openAuthModal('instructor')">Instructor Dashboard</a>
-                <a href="#" onclick="openAuthModal('admin')">Admin Panel</a>
+                <button id="themeSwitcher" class="theme-switcher-btn" onclick="toggleTheme()" aria-label="Toggle Theme" style="background: transparent; border: 1px solid var(--border-color); border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 16px; transition: all 0.2s;">🌙</button>
             </div>
         </div>
     </nav>
@@ -116,7 +116,6 @@
             if (user && user.role) {
                 if (user.role === 'student') location.href = '/dashboard';
                 else if (user.role === 'instructor') location.href = '/instructor';
-                else if (user.role === 'admin') location.href = '/admin';
             }
         });
     </script>

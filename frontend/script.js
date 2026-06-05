@@ -76,10 +76,10 @@ function openAuthModal(role) {
         else if (role === 'admin') titleEl.textContent = 'Admin Access Portal';
     }
 
-    // Toggle registration tab. Hide for Admin (admin account is pre-seeded)
+    // Toggle registration tab. Hide for Admin and Instructor
     const tabsContainer = document.getElementById('authTabsContainer');
     if (tabsContainer) {
-        if (role === 'admin') {
+        if (role === 'admin' || role === 'instructor') {
             tabsContainer.style.display = 'none';
         } else {
             tabsContainer.style.display = 'flex';
@@ -254,6 +254,111 @@ async function initializeStudentDashboard() {
     }
 
     loadMarketInsights();
+    await refreshStudentDashboard();
+}
+
+async function loadStudentCourses(studentId) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/student/${studentId}/progress`);
+        const data = await response.json();
+        
+        const myCoursesList = document.getElementById('myCoursesList');
+        if (myCoursesList) {
+            if (data.enrollments && data.enrollments.length > 0) {
+                let html = '';
+                data.enrollments.forEach((enroll, idx) => {
+                    const c = enroll.courses;
+                    const cid = enroll.course_id;
+                    // Make first course active if currentCourseId not set or not in enrollments
+                    if (idx === 0 && !data.enrollments.some(e => e.course_id === currentCourseId)) {
+                        currentCourseId = cid;
+                    }
+                    const isActive = cid === currentCourseId ? 'active' : '';
+                    html += `
+                        <div class="course-card ${isActive}" onclick="selectCourse('${cid}')" id="course-${cid}">
+                            <div class="course-info">
+                                <h4>${escapeHtml(c.title)}</h4>
+                                <p>${escapeHtml(c.description)}</p>
+                            </div>
+                            <span class="badge">Enrolled</span>
+                        </div>
+                    `;
+                });
+                myCoursesList.innerHTML = html;
+                
+                // Show panels if enrolled
+                document.querySelectorAll('.main-content .card').forEach(el => el.style.display = 'block');
+            } else {
+                myCoursesList.innerHTML = '<div style="font-size:13px; color:var(--text-secondary); padding: 10px 0;">Not enrolled in any courses yet. Enroll in a course from the catalog below to start learning!</div>';
+                // Hide panels if not enrolled
+                document.querySelectorAll('.main-content .card').forEach(el => el.style.display = 'none');
+            }
+        }
+    } catch (err) {
+        console.error('Error loading enrolled courses:', err);
+    }
+}
+
+async function loadCourseCatalog(studentId) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/courses/available?student_id=${studentId}`);
+        const data = await response.json();
+        
+        const catalogList = document.getElementById('availableCoursesList');
+        if (catalogList) {
+            if (data.available_courses && data.available_courses.length > 0) {
+                let html = '';
+                data.available_courses.forEach(c => {
+                    html += `
+                        <div class="course-card" style="cursor: default; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding: 14px;">
+                            <div class="course-info" style="width: 100%;">
+                                <h4>${escapeHtml(c.title)}</h4>
+                                <p>${escapeHtml(c.description)}</p>
+                                <p style="margin-top: 4px; font-size: 11px; font-weight: 600; color: var(--text-secondary);">Instructor: ${escapeHtml(c.instructor_name)}</p>
+                            </div>
+                            <button class="btn-primary" style="font-size: 12px; padding: 6px 16px; background: var(--secondary-gradient); color: white; border-radius: 20px; box-shadow: none; cursor: pointer; border: none; align-self: flex-end;" onclick="enrollInCourse('${c.id}')">Enroll</button>
+                        </div>
+                    `;
+                });
+                catalogList.innerHTML = html;
+            } else {
+                catalogList.innerHTML = '<div style="font-size:13px; color:var(--text-secondary); padding: 10px 0;">You have enrolled in all available courses!</div>';
+            }
+        }
+    } catch (err) {
+        console.error('Error loading course catalog:', err);
+    }
+}
+
+async function enrollInCourse(courseId) {
+    if (!currentUser) return;
+    showToast("Enrolling...", "info");
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/enroll`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                student_id: currentUser.id,
+                course_id: courseId
+            })
+        });
+        const data = await response.json();
+        if (response.ok && data.success) {
+            showToast("Successfully enrolled!", "success");
+            currentCourseId = courseId; // Switch to the newly enrolled course!
+            await refreshStudentDashboard();
+        } else {
+            showToast("Failed to enroll", "error");
+        }
+    } catch (err) {
+        showToast("Error enrolling in course", "error");
+    }
+}
+
+async function refreshStudentDashboard() {
+    if (!currentUser) return;
+    await loadStudentCourses(currentUser.id);
+    await loadCourseCatalog(currentUser.id);
     await loadStudentProgress(currentUser.id);
     loadDoubts(currentCourseId);
     renderActiveLesson();
@@ -279,11 +384,6 @@ async function loadStudentProgress(studentId) {
                     </div>
                 `;
             });
-            
-            // If the student has no enrollments display a helper message
-            if (data.enrollments.length === 0) {
-                html = '<div style="font-size:13px; color:var(--text-secondary);">Not enrolled in any courses yet.</div>';
-            }
             progressContainer.innerHTML = html;
         }
 
@@ -329,7 +429,7 @@ function selectCourse(courseId) {
     activeLessonIndex = 0;
     
     // Toggle active classes in UI
-    document.querySelectorAll('.course-card').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('#myCoursesList .course-card').forEach(el => el.classList.remove('active'));
     const activeEl = document.getElementById(`course-${courseId}`);
     if (activeEl) activeEl.classList.add('active');
 
@@ -611,8 +711,185 @@ async function initializeInstructorDashboard() {
     const display = document.getElementById('instructorNameDisplay');
     if (display) display.textContent = `Instructor: ${currentUser.full_name}`;
 
+    await loadInstructorStats();
     await loadAtRiskStudents();
     await loadInstructorDoubts();
+    await loadInstructorHeatmap();
+    await loadInstructorQuizAnalytics();
+    await loadInstructorRepetitiveQueries();
+}
+
+async function loadInstructorStats() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/instructor/${currentUser.id}/stats`);
+        const data = await response.json();
+        
+        // Populate stats cards
+        const instTotalStudents = document.getElementById('instTotalStudents');
+        const instAvgCompletion = document.getElementById('instAvgCompletion');
+        if (instTotalStudents) instTotalStudents.textContent = data.total_students || 0;
+        if (instAvgCompletion) instAvgCompletion.textContent = `${data.avg_completion || 0}%`;
+        
+        // Render dynamic course list with count
+        const courseContainer = document.getElementById('instructorCourseList');
+        if (courseContainer) {
+            if (data.courses && data.courses.length > 0) {
+                let html = '';
+                data.courses.forEach((c, idx) => {
+                    // Set first course active if currentCourseId not set or not in courses list
+                    if (idx === 0 && !data.courses.some(e => e.id === currentCourseId)) {
+                        currentCourseId = c.id;
+                    }
+                    const isActive = c.id === currentCourseId ? 'active' : '';
+                    html += `
+                        <div class="course-card ${isActive}" onclick="selectInstructorCourse('${c.id}')" id="icourse-${c.id}">
+                            <div class="course-info">
+                                <h4>${escapeHtml(c.title)}</h4>
+                                <p>${c.students_enrolled} student(s) enrolled</p>
+                            </div>
+                        </div>
+                    `;
+                });
+                courseContainer.innerHTML = html;
+            } else {
+                courseContainer.innerHTML = '<div class="loading">No courses found.</div>';
+            }
+        }
+    } catch (err) {
+        console.error('Error loading instructor stats:', err);
+    }
+}
+
+async function loadInstructorHeatmap() {
+    const container = document.getElementById('heatmap');
+    if (!container) return;
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/instructor/${currentUser.id}/engagement-heatmap`);
+        const data = await response.json();
+        
+        if (data.heatmap_data && data.heatmap_data.length > 0) {
+            let html = `
+                <div style="display: flex; gap: 4px; margin-bottom: 16px;">
+                    <span style="width: 100px; display: inline-block;"></span>
+                    <div style="display: inline-flex; width: calc(100% - 110px); gap: 2%;">
+                        <div style="flex: 1; text-align: center; font-size: 11px; font-weight: 600; color: var(--text-secondary);">Week 4</div>
+                        <div style="flex: 1; text-align: center; font-size: 11px; font-weight: 600; color: var(--text-secondary);">Week 3</div>
+                        <div style="flex: 1; text-align: center; font-size: 11px; font-weight: 600; color: var(--text-secondary);">Week 2</div>
+                        <div style="flex: 1; text-align: center; font-size: 11px; font-weight: 600; color: var(--text-secondary);">Week 1</div>
+                    </div>
+                </div>
+            `;
+            
+            data.heatmap_data.forEach(row => {
+                html += `
+                    <div class="heatmap-row" style="margin-bottom: 8px; display: flex; align-items: center;">
+                        <span style="width: 100px; display: inline-block; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(row.student_name)}">${escapeHtml(row.student_name)}</span>
+                        <div style="display: inline-flex; width: calc(100% - 110px); gap: 2%;">
+                `;
+                
+                row.weeks.forEach(status => {
+                    let bg = '#ef4444'; // inactive
+                    if (status === 'active') bg = '#10b981';
+                    else if (status === 'warning') bg = '#f59e0b';
+                    
+                    html += `
+                        <span style="flex: 1; background: ${bg}; height: 24px; border-radius: 4px;" title="Status: ${status}"></span>
+                    `;
+                });
+                
+                html += `
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        } else {
+            container.innerHTML = '<div style="font-size:13px; color:var(--text-secondary); text-align:center; padding:10px 0;">No student activities recorded yet.</div>';
+        }
+    } catch (err) {
+        console.error('Error loading heatmap:', err);
+    }
+}
+
+async function loadInstructorQuizAnalytics() {
+    const container = document.getElementById('quizAnalytics');
+    if (!container) return;
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/instructor/${currentUser.id}/quiz-analytics`);
+        const data = await response.json();
+        
+        if (data.quiz_analytics && data.quiz_analytics.length > 0) {
+            let html = '';
+            data.quiz_analytics.forEach(q => {
+                let warningText = '';
+                if (q.success_rate < 50) warningText = ' [Warning: Low Success]';
+                
+                html += `
+                    <div class="skill-item">
+                        <span class="skill-name" style="width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(q.question)}">${escapeHtml(q.question)}</span>
+                        <div class="skill-bar" style="margin: 0 16px;">
+                            <div class="skill-bar-fill" style="width: ${q.success_rate}%"></div>
+                        </div>
+                        <span class="skill-count" style="width: 140px; text-align: right; font-size: 12px;">${q.success_rate}% Correct${warningText}</span>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        } else {
+            container.innerHTML = '<div style="font-size:13px; color:var(--text-secondary); text-align:center; padding:10px 0;">No quiz attempts logged yet.</div>';
+        }
+    } catch (err) {
+        console.error('Error loading quiz analytics:', err);
+    }
+}
+
+async function loadInstructorRepetitiveQueries() {
+    const container = document.getElementById('repetitiveQueries');
+    if (!container) return;
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/instructor/${currentUser.id}/repetitive-queries`);
+        const data = await response.json();
+        
+        let html = '';
+        
+        if (data.keyword_frequencies && data.keyword_frequencies.length > 0) {
+            html += '<div style="margin-bottom: 12px; font-size: 13px;"><strong>Commonly Searched Concepts (AI + Doubt logs):</strong></div>';
+            
+            const maxCount = Math.max(...data.keyword_frequencies.map(k => k.count));
+            data.keyword_frequencies.forEach(kw => {
+                const percent = maxCount > 0 ? (kw.count / maxCount) * 100 : 0;
+                html += `
+                    <div class="skill-item">
+                        <span class="skill-name" style="text-transform: capitalize; width: 120px;">${escapeHtml(kw.keyword)}</span>
+                        <div class="skill-bar" style="margin: 0 16px;">
+                            <div class="skill-bar-fill" style="width: ${percent}%; background: var(--secondary-gradient);"></div>
+                        </div>
+                        <span class="skill-count" style="width: 70px;">${kw.count} hits</span>
+                    </div>
+                `;
+            });
+            
+            if (data.sample_doubts && data.sample_doubts.length > 0) {
+                html += '<div style="margin-top: 16px; border-top: 1px dashed var(--border-color); padding-top: 12px;">';
+                html += '<strong>Recent Student Inquiries:</strong>';
+                html += '<ul style="margin-top: 8px; padding-left: 20px; font-size: 13px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 6px; list-style-type: disc;">';
+                data.sample_doubts.forEach(d => {
+                    html += `<li>"${escapeHtml(d.question)}"</li>`;
+                });
+                html += '</ul>';
+                html += '</div>';
+            }
+        } else {
+            html = '<div style="font-size:13px; color:var(--text-secondary); text-align:center; padding:10px 0;">No inquiries or doubts analyzed yet.</div>';
+        }
+        
+        container.innerHTML = html;
+    } catch (err) {
+        console.error('Error loading repetitive queries:', err);
+    }
 }
 
 async function loadAtRiskStudents() {
@@ -640,8 +917,10 @@ async function loadAtRiskStudents() {
         `;
         
         if (data.at_risk_students && data.at_risk_students.length > 0) {
+            // Count high risk students (score > 50)
+            const atRiskCount = data.at_risk_students.filter(s => s.risk_score > 50).length;
             const riskCountText = document.getElementById('riskCountText');
-            if (riskCountText) riskCountText.textContent = data.at_risk_students.length;
+            if (riskCountText) riskCountText.textContent = atRiskCount;
 
             data.at_risk_students.forEach(student => {
                 let riskClass = 'risk-low';
@@ -650,8 +929,8 @@ async function loadAtRiskStudents() {
                 
                 html += `
                     <tr>
-                        <td><strong>${student.student_name}</strong></td>
-                        <td>${student.course_title}</td>
+                        <td><strong>${escapeHtml(student.student_name)}</strong></td>
+                        <td>${escapeHtml(student.course_title)}</td>
                         <td>
                             <div style="display:flex; align-items:center; gap:8px;">
                                 <div class="progress-bar" style="width: 80px; height:6px;">
@@ -664,7 +943,7 @@ async function loadAtRiskStudents() {
                         <td>${student.days_inactive} days</td>
                         <td class="${riskClass}">${student.risk_score}%</td>
                         <td>
-                            <button class="btn-alert" onclick="emailStudent('${student.email}', '${student.student_name}')">Email</button>
+                            <button class="btn-alert" onclick="emailStudent('${escapeHtml(student.email)}', '${escapeHtml(student.student_name)}')">Email</button>
                         </td>
                     </tr>
                 `;
@@ -704,7 +983,7 @@ async function loadInstructorDoubts() {
                             <div class="doubt-question">Question: ${escapeHtml(doubt.question)}</div>
                             ${statusBadge}
                         </div>
-                        <div class="doubt-meta">Asked by ${author} • ${formatDate(doubt.created_at)}</div>
+                        <div class="doubt-meta">Asked by ${escapeHtml(author)} • ${formatDate(doubt.created_at)}</div>
                 `;
                 
                 if (doubt.doubt_replies && doubt.doubt_replies.length > 0) {
@@ -713,7 +992,7 @@ async function loadInstructorDoubts() {
                         const replier = rep.profiles?.full_name || 'Instructor';
                         html += `
                             <div class="doubt-reply-text">
-                                <strong>${replier}:</strong> ${escapeHtml(rep.reply)}
+                                <strong>${escapeHtml(replier)}:</strong> ${escapeHtml(rep.reply)}
                             </div>
                         `;
                     });
@@ -775,7 +1054,7 @@ async function submitInstructorReply(doubtId) {
 
 function selectInstructorCourse(courseId) {
     currentCourseId = courseId;
-    document.querySelectorAll('.course-card').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('#instructorCourseList .course-card').forEach(el => el.classList.remove('active'));
     const activeEl = document.getElementById(`icourse-${courseId}`);
     if (activeEl) activeEl.classList.add('active');
     
@@ -792,69 +1071,43 @@ function emailStudent(email, name) {
 }
 
 // ============================================
-// Admin Dashboard
+// Dark Mode / Light Mode Theme Switching
 // ============================================
-async function initializeAdminDashboard() {
-    loadAdminMarketIntelligence();
+function toggleTheme() {
+    const body = document.body;
+    const isDark = body.classList.toggle('dark-mode');
+    
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    
+    const switchers = document.querySelectorAll('#themeSwitcher');
+    switchers.forEach(btn => {
+        btn.textContent = isDark ? '☀️' : '🌙';
+    });
 }
 
-async function loadAdminMarketIntelligence() {
-    const container = document.getElementById('marketIntelligence');
-    if (!container) return;
+function initTheme() {
+    const savedTheme = localStorage.getItem('theme');
+    const systemPrefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
     
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/admin/market-intelligence`);
-        const data = await response.json();
-        
-        let html = '<h4>Trending Skills demand (India Job Postings)</h4>';
-        html += '<div style="margin-top:16px;">';
-        
-        if (data.trending_skills) {
-            const maxCount = Math.max(...Object.values(data.trending_skills));
-            Object.entries(data.trending_skills).forEach(([skill, count]) => {
-                const percent = maxCount > 0 ? (count / maxCount) * 100 : 0;
-                html += `
-                    <div class="skill-item">
-                        <span class="skill-name" style="text-transform: capitalize;">${skill}</span>
-                        <div class="skill-bar">
-                            <div class="skill-bar-fill" style="width: ${percent}%"></div>
-                        </div>
-                        <span class="skill-count">${count} listings</span>
-                    </div>
-                `;
-            });
-        } else {
-            html += '<div class="loading">No listings found.</div>';
-        }
-        
-        html += '</div>';
-        container.innerHTML = html;
-    } catch (err) {
-        console.error('Admin market err:', err);
+    const isDark = savedTheme === 'dark' || (!savedTheme && systemPrefersDark);
+    
+    if (isDark) {
+        document.body.classList.add('dark-mode');
+    } else {
+        document.body.classList.remove('dark-mode');
     }
+    
+    const switchers = document.querySelectorAll('#themeSwitcher');
+    switchers.forEach(btn => {
+        btn.textContent = isDark ? '☀️' : '🌙';
+    });
 }
 
-function showNewBatchForm() {
-    const name = prompt("Enter new Batch Name:");
-    if (!name) return;
-    const course = prompt("Enter Course Name:");
-    if (!course) return;
-    const size = prompt("Enter Max Seats:", "30");
-    if (!size) return;
-    
-    const tableBody = document.querySelector('#batchTable tbody');
-    if (tableBody) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td><strong>${escapeHtml(name)}</strong></td>
-            <td>${escapeHtml(course)}</td>
-            <td>0/${escapeHtml(size)}</td>
-            <td>${new Date().toLocaleDateString()}</td>
-            <td><span style="color:var(--accent-amber);">Pending Launch</span></td>
-        `;
-        tableBody.appendChild(tr);
-        showToast(`Batch ${name} created!`, "success");
-    }
+// Call initTheme on script load
+if (typeof window !== 'undefined') {
+    document.addEventListener("DOMContentLoaded", () => {
+        initTheme();
+    });
 }
 
 // ============================================

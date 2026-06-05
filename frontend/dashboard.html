@@ -23,7 +23,8 @@
 <body>
     <div class="header">
         <div class="logo" onclick="location.href='/'">EduTrack</div>
-        <div class="user-info">
+        <div class="user-info" style="align-items: center; display: flex; gap: 16px;">
+            <button id="themeSwitcher" class="theme-switcher-btn" onclick="toggleTheme()" aria-label="Toggle Theme" style="background: transparent; border: 1px solid var(--border-color); border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 16px; transition: all 0.2s;">🌙</button>
             <span id="studentNameDisplay">Student</span>
             <button class="logout-btn" onclick="logout()">Logout</button>
         </div>
@@ -35,28 +36,16 @@
             <!-- Course List Card -->
             <div class="card">
                 <h3>My Courses</h3>
-                <div class="course-list">
-                    <div class="course-card active" onclick="selectCourse('devops')" id="course-devops">
-                        <div class="course-info">
-                            <h4>DevOps Masterclass</h4>
-                            <p>Instructor: Prof. Sharma</p>
-                        </div>
-                        <span class="badge">Enrolled</span>
-                    </div>
-                    <div class="course-card" onclick="selectCourse('aws')" id="course-aws">
-                        <div class="course-info">
-                            <h4>AWS Cloud Computing</h4>
-                            <p>Instructor: Prof. Sharma</p>
-                        </div>
-                        <span class="badge">Enrolled</span>
-                    </div>
-                    <div class="course-card" onclick="selectCourse('docker')" id="course-docker">
-                        <div class="course-info">
-                            <h4>Docker & Kubernetes</h4>
-                            <p>Instructor: Prof. Sharma</p>
-                        </div>
-                        <span class="badge">Enrolled</span>
-                    </div>
+                <div class="course-list" id="myCoursesList">
+                    <div class="loading">Loading enrolled courses...</div>
+                </div>
+            </div>
+
+            <!-- Course Catalog Card -->
+            <div class="card" id="courseCatalogCard">
+                <h3>Course Catalog</h3>
+                <div class="course-list" id="availableCoursesList">
+                    <div class="loading">Loading available courses...</div>
                 </div>
             </div>
 

@@ -202,9 +202,9 @@ async def startup_event():
 # ---------- Authentication ----------
 @app.post("/api/auth/signup")
 async def signup(request: SignUpRequest):
-    """Register a new student or instructor in the database"""
-    if request.role not in ["student", "instructor"]:
-        raise HTTPException(status_code=400, detail="Invalid role. Must be 'student' or 'instructor'.")
+    """Register a new student in the database"""
+    if request.role != "student":
+        raise HTTPException(status_code=400, detail="Registration is only allowed for students.")
     
     try:
         # Check if email is already taken
@@ -615,7 +615,7 @@ async def get_at_risk_students(instructor_id: str):
                 last_active
             )
             
-            if risk_score > 0.5:
+            if True:
                 days_inactive = 0
                 if last_active:
                     try:
@@ -641,76 +641,214 @@ async def get_at_risk_students(instructor_id: str):
         return {"at_risk_students": []}
 
 
-# ---------- Admin Dashboard: Market Intelligence ----------
-@app.get("/api/admin/market-intelligence")
-async def admin_market_intelligence():
-    """Get aggregated market insights for admin dashboard"""
+# ---------- Instructor Dashboard: Quiz Analytics ----------
+@app.get("/api/instructor/{instructor_id}/quiz-analytics")
+async def get_quiz_analytics(instructor_id: str):
+    """Aggregate quiz success rates for the instructor's courses"""
     try:
-        # Get cached market insights from Supabase
-        insights = supabase.table("market_insights")\
-            .select("*")\
-            .order("last_updated", desc=True)\
-            .limit(10)\
+        courses = supabase.table("courses").select("id").eq("instructor_id", instructor_id).execute()
+        course_ids = [c["id"] for c in courses.data] if courses.data else []
+        
+        if not course_ids:
+            return {"quiz_analytics": []}
+            
+        attempts = supabase.table("quiz_attempts")\
+            .select("question, is_correct")\
+            .in_("course_id", course_ids)\
             .execute()
-        
-        # Get trending skills from Himalayas
-        trending_skills = {}
-        for skill in ["python", "aws", "docker", "kubernetes", "react", "devops"]:
-            try:
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(
-                        "https://himalayas.app/jobs/api/search",
-                        params={"country": "in", "query": skill, "limit": 10},
-                        timeout=5.0
-                    )
-                    data = response.json()
-                    trending_skills[skill] = len(data.get("jobs", []))
-            except Exception:
-                trending_skills[skill] = 8 # reasonable fallback
-        
-        return {
-            "cached_insights": insights.data[:5] if insights.data else [],
-            "trending_skills": trending_skills,
-            "last_updated": datetime.now().isoformat()
-        }
+            
+        question_stats = {}
+        for attempt in (attempts.data or []):
+            q = attempt.get("question")
+            is_correct = attempt.get("is_correct", False)
+            if q not in question_stats:
+                question_stats[q] = {"total": 0, "correct": 0}
+            question_stats[q]["total"] += 1
+            if is_correct:
+                question_stats[q]["correct"] += 1
+                
+        analytics = []
+        for q, stats in question_stats.items():
+            success_rate = round((stats["correct"] / stats["total"]) * 100) if stats["total"] > 0 else 0
+            analytics.append({
+                "question": q,
+                "total_attempts": stats["total"],
+                "correct_attempts": stats["correct"],
+                "success_rate": success_rate
+            })
+            
+        return {"quiz_analytics": analytics}
     except Exception as e:
-        return {"error": str(e), "trending_skills": {}}
+        return {"quiz_analytics": []}
 
 
-# ---------- Admin Stats (real DB counts) ----------
-@app.get("/api/admin/stats")
-async def admin_stats():
-    """Return real counts from the database for admin dashboard"""
+# ---------- Instructor Dashboard: Engagement Heatmap ----------
+@app.get("/api/instructor/{instructor_id}/engagement-heatmap")
+async def get_engagement_heatmap(instructor_id: str):
+    """Calculate weekly student activities for the past 4 weeks"""
     try:
-        students = supabase.table("profiles").select("id").eq("role", "student").execute()
-        instructors = supabase.table("profiles").select("id").eq("role", "instructor").execute()
-        courses_res = supabase.table("courses").select("id").execute()
-        enrollments_res = supabase.table("enrollments").select("progress_percent").execute()
+        courses = supabase.table("courses").select("id").eq("instructor_id", instructor_id).execute()
+        course_ids = [c["id"] for c in courses.data] if courses.data else []
+        
+        if not course_ids:
+            return {"heatmap_data": []}
+            
+        # Get all enrollments for these courses
+        enrollments = supabase.table("enrollments")\
+            .select("student_id, profiles(full_name)")\
+            .in_("course_id", course_ids)\
+            .execute()
+            
+        student_map = {}
+        for e in (enrollments.data or []):
+            sid = e.get("student_id")
+            sname = e.get("profiles", {}).get("full_name") if e.get("profiles") else "Unknown Student"
+            student_map[sid] = sname
+            
+        if not student_map:
+            return {"heatmap_data": []}
+            
+        # Get activity logs for these students
+        logs = supabase.table("activity_log")\
+            .select("student_id, created_at")\
+            .in_("student_id", list(student_map.keys()))\
+            .execute()
+            
+        # Group activity by student and week
+        now = datetime.now()
+        heatmap_data = []
+        
+        for sid, name in student_map.items():
+            # Filter logs for this student
+            s_logs = [l for l in (logs.data or []) if l.get("student_id") == sid]
+            
+            # Count activities per week
+            # Week 0: 0-7 days ago, Week 1: 8-14 days ago, Week 2: 15-21 days ago, Week 3: 22-28 days ago
+            weekly_counts = [0, 0, 0, 0]
+            for log in s_logs:
+                try:
+                    created_at_clean = log.get("created_at").replace('Z', '+00:00')
+                    dt = datetime.fromisoformat(created_at_clean)
+                    days_ago = (now - dt).days
+                    if 0 <= days_ago < 7:
+                        weekly_counts[0] += 1
+                    elif 7 <= days_ago < 14:
+                        weekly_counts[1] += 1
+                    elif 14 <= days_ago < 21:
+                        weekly_counts[2] += 1
+                    elif 21 <= days_ago < 28:
+                        weekly_counts[3] += 1
+                except Exception:
+                    pass
+            
+            # Status: active (>= 3 activities), warning (1-2), inactive (0)
+            weekly_status = []
+            for count in weekly_counts:
+                if count >= 3:
+                    weekly_status.append("active")
+                elif count > 0:
+                    weekly_status.append("warning")
+                else:
+                    weekly_status.append("inactive")
+                    
+            # Reverse so that oldest is Week 4 and newest is Week 1 (left to right in UI)
+            weekly_status.reverse()
+            
+            heatmap_data.append({
+                "student_name": name,
+                "weeks": weekly_status
+            })
+            
+        return {"heatmap_data": heatmap_data}
+    except Exception as e:
+        return {"heatmap_data": []}
 
-        total_students = len(students.data) if students.data else 0
-        total_instructors = len(instructors.data) if instructors.data else 0
-        total_courses = len(courses_res.data) if courses_res.data else 0
-        total_enrollments = len(enrollments_res.data) if enrollments_res.data else 0
 
-        avg_completion = 0
-        if enrollments_res.data:
-            avg_completion = round(
-                sum(e.get("progress_percent", 0) for e in enrollments_res.data) / len(enrollments_res.data)
-            )
-
+# ---------- Instructor Dashboard: Repetitive Queries ----------
+@app.get("/api/instructor/{instructor_id}/repetitive-queries")
+async def get_repetitive_queries(instructor_id: str):
+    """Analyze student chat queries and forum doubts to find repetitive issues"""
+    try:
+        courses = supabase.table("courses").select("id").eq("instructor_id", instructor_id).execute()
+        course_ids = [c["id"] for c in courses.data] if courses.data else []
+        
+        if not course_ids:
+            return {"repetitive_queries": []}
+            
+        # Get all doubts
+        doubts = supabase.table("doubts")\
+            .select("question, created_at")\
+            .in_("course_id", course_ids)\
+            .execute()
+            
+        # Get all chat queries from activity log
+        chat_logs = supabase.table("activity_log")\
+            .select("metadata, created_at")\
+            .eq("activity_type", "chat_query")\
+            .execute()
+            
+        all_texts = []
+        for d in (doubts.data or []):
+            all_texts.append(d.get("question", "").lower())
+        for cl in (chat_logs.data or []):
+            meta = cl.get("metadata") or {}
+            all_texts.append(meta.get("question", "").lower())
+            
+        # Simple keyword extraction
+        keywords = ["docker", "kubernetes", "pod", "aws", "s3", "cicd", "permission", "port", "error", "connection", "yaml", "cmd", "entrypoint", "volume", "container"]
+        keyword_counts = {kw: 0 for kw in keywords}
+        
+        for text in all_texts:
+            for kw in keywords:
+                if kw in text:
+                    keyword_counts[kw] += 1
+                    
+        # Sort keywords by frequency
+        sorted_kws = [{"keyword": k, "count": c} for k, c in keyword_counts.items() if c > 0]
+        sorted_kws.sort(key=lambda x: x["count"], reverse=True)
+        
+        # Get top 5 recent doubts as samples
+        recent_doubts = doubts.data[:5] if doubts.data else []
+        
         return {
-            "total_students": total_students,
-            "total_instructors": total_instructors,
-            "total_courses": total_courses,
-            "total_enrollments": total_enrollments,
-            "avg_completion": avg_completion
+            "keyword_frequencies": sorted_kws,
+            "sample_doubts": recent_doubts,
+            "total_queries": len(all_texts)
         }
     except Exception as e:
-        return {
-            "total_students": 0, "total_instructors": 0,
-            "total_courses": 0, "total_enrollments": 0,
-            "avg_completion": 0
-        }
+        return {"keyword_frequencies": [], "sample_doubts": [], "total_queries": 0}
+
+
+# ---------- Student Dashboard: Available Courses ----------
+@app.get("/api/courses/available")
+async def get_available_courses(student_id: str):
+    """Get all courses the student is NOT currently enrolled in"""
+    try:
+        # Get all courses
+        all_courses = supabase.table("courses").select("*, profiles(full_name)").execute()
+        
+        # Get student's enrollments
+        enrollments = supabase.table("enrollments")\
+            .select("course_id")\
+            .eq("student_id", student_id)\
+            .execute()
+            
+        enrolled_ids = [e["course_id"] for e in enrollments.data] if enrollments.data else []
+        
+        available = []
+        for course in (all_courses.data or []):
+            if course["id"] not in enrolled_ids:
+                instructor_name = course.get("profiles", {}).get("full_name") if course.get("profiles") else "Prof. Sharma"
+                available.append({
+                    "id": course["id"],
+                    "title": course["title"],
+                    "description": course["description"],
+                    "instructor_name": instructor_name
+                })
+                
+        return {"available_courses": available}
+    except Exception as e:
+        return {"available_courses": []}
 
 
 # ---------- Instructor Stats (real DB counts) ----------
@@ -722,8 +860,8 @@ async def instructor_stats(instructor_id: str):
         course_ids = [c["id"] for c in courses_res.data] if courses_res.data else []
 
         total_enrolled = 0
-        course_enrollment_counts = {}
         avg_completion = 0
+        course_list = []
 
         if course_ids:
             enrollments_res = supabase.table("enrollments").select("*").in_("course_id", course_ids).execute()
@@ -734,21 +872,26 @@ async def instructor_stats(instructor_id: str):
                     sum(e.get("progress_percent", 0) for e in enrollments_res.data) / len(enrollments_res.data)
                 )
 
-            for cid in course_ids:
-                course_enrollment_counts[cid] = len(
-                    [e for e in (enrollments_res.data or []) if e.get("course_id") == cid]
-                )
+            for c in courses_res.data:
+                cid = c["id"]
+                title = c["title"]
+                cnt = len([e for e in (enrollments_res.data or []) if e.get("course_id") == cid])
+                course_list.append({
+                    "id": cid,
+                    "title": title,
+                    "students_enrolled": cnt
+                })
 
         return {
             "total_students": total_enrolled,
             "total_courses": len(course_ids),
             "avg_completion": avg_completion,
-            "course_enrollments": course_enrollment_counts
+            "courses": course_list
         }
     except Exception as e:
         return {
             "total_students": 0, "total_courses": 0,
-            "avg_completion": 0, "course_enrollments": {}
+            "avg_completion": 0, "courses": []
         }
 
 
@@ -776,10 +919,6 @@ if os.path.exists(FRONTEND_PATH):
     @app.get("/instructor")
     async def serve_instructor_root():
         return FileResponse(os.path.join(FRONTEND_PATH, "instructor.html"))
-        
-    @app.get("/admin")
-    async def serve_admin_root():
-        return FileResponse(os.path.join(FRONTEND_PATH, "admin.html"))
 
     # Mount the directory under root. FastAPI will first match the api/ routes and
     # dashboard/instructor/admin routes defined above, and then fall back to static files.
