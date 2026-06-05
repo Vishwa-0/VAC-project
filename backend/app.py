@@ -677,6 +677,81 @@ async def admin_market_intelligence():
         return {"error": str(e), "trending_skills": {}}
 
 
+# ---------- Admin Stats (real DB counts) ----------
+@app.get("/api/admin/stats")
+async def admin_stats():
+    """Return real counts from the database for admin dashboard"""
+    try:
+        students = supabase.table("profiles").select("id").eq("role", "student").execute()
+        instructors = supabase.table("profiles").select("id").eq("role", "instructor").execute()
+        courses_res = supabase.table("courses").select("id").execute()
+        enrollments_res = supabase.table("enrollments").select("progress_percent").execute()
+
+        total_students = len(students.data) if students.data else 0
+        total_instructors = len(instructors.data) if instructors.data else 0
+        total_courses = len(courses_res.data) if courses_res.data else 0
+        total_enrollments = len(enrollments_res.data) if enrollments_res.data else 0
+
+        avg_completion = 0
+        if enrollments_res.data:
+            avg_completion = round(
+                sum(e.get("progress_percent", 0) for e in enrollments_res.data) / len(enrollments_res.data)
+            )
+
+        return {
+            "total_students": total_students,
+            "total_instructors": total_instructors,
+            "total_courses": total_courses,
+            "total_enrollments": total_enrollments,
+            "avg_completion": avg_completion
+        }
+    except Exception as e:
+        return {
+            "total_students": 0, "total_instructors": 0,
+            "total_courses": 0, "total_enrollments": 0,
+            "avg_completion": 0
+        }
+
+
+# ---------- Instructor Stats (real DB counts) ----------
+@app.get("/api/instructor/{instructor_id}/stats")
+async def instructor_stats(instructor_id: str):
+    """Return real counts for instructor dashboard"""
+    try:
+        courses_res = supabase.table("courses").select("id, title").eq("instructor_id", instructor_id).execute()
+        course_ids = [c["id"] for c in courses_res.data] if courses_res.data else []
+
+        total_enrolled = 0
+        course_enrollment_counts = {}
+        avg_completion = 0
+
+        if course_ids:
+            enrollments_res = supabase.table("enrollments").select("*").in_("course_id", course_ids).execute()
+            total_enrolled = len(enrollments_res.data) if enrollments_res.data else 0
+
+            if enrollments_res.data:
+                avg_completion = round(
+                    sum(e.get("progress_percent", 0) for e in enrollments_res.data) / len(enrollments_res.data)
+                )
+
+            for cid in course_ids:
+                course_enrollment_counts[cid] = len(
+                    [e for e in (enrollments_res.data or []) if e.get("course_id") == cid]
+                )
+
+        return {
+            "total_students": total_enrolled,
+            "total_courses": len(course_ids),
+            "avg_completion": avg_completion,
+            "course_enrollments": course_enrollment_counts
+        }
+    except Exception as e:
+        return {
+            "total_students": 0, "total_courses": 0,
+            "avg_completion": 0, "course_enrollments": {}
+        }
+
+
 # ---------- Health Check ----------
 @app.get("/health")
 async def health_check():
