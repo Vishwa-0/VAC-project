@@ -106,6 +106,16 @@ class DoubtReply(BaseModel):
     user_id: str
     reply: str
 
+class SignUpRequest(BaseModel):
+    full_name: str
+    email: str
+    password: str
+    role: str # student or instructor
+
+class SignInRequest(BaseModel):
+    email: str
+    password: str
+
 # ============================================
 # Helper Functions
 # ============================================
@@ -138,9 +148,141 @@ def calculate_risk_score(enrollments, quiz_scores, last_active):
     
     return min(risk, 1.0)
 
+# ---------- Database Seeder ----------
+def seed_database():
+    """Seed the database with initial Admin, Instructor and default Courses if empty"""
+    try:
+        # Check if Admin exists
+        admin_res = supabase.table("profiles").select("*").eq("role", "admin").execute()
+        if not admin_res.data:
+            supabase.table("profiles").insert({
+                "email": "admin@edutrack.com",
+                "password": "adminpassword",
+                "full_name": "System Administrator",
+                "role": "admin"
+            }).execute()
+            print("[INFO] Seeded default Admin user in profiles: admin@edutrack.com / adminpassword")
+        
+        # Check if default Instructor exists
+        inst_res = supabase.table("profiles").select("*").eq("role", "instructor").execute()
+        if not inst_res.data:
+            supabase.table("profiles").insert({
+                "email": "sharma@edutrack.com",
+                "password": "instructorpassword",
+                "full_name": "Prof. Sharma",
+                "role": "instructor"
+            }).execute()
+            print("[INFO] Seeded default Instructor user in profiles: sharma@edutrack.com / instructorpassword")
+            
+        # Seed default Courses if empty
+        courses_res = supabase.table("courses").select("*").execute()
+        if not courses_res.data:
+            # Find the instructor id
+            i_res = supabase.table("profiles").select("*").eq("role", "instructor").execute()
+            inst_id = i_res.data[0]["id"] if i_res.data else "instructor_abc"
+            
+            supabase.table("courses").insert([
+                {"id": "devops", "title": "DevOps Masterclass", "description": "CI/CD, Docker, Kubernetes, and Cloud", "instructor_id": inst_id},
+                {"id": "aws", "title": "AWS Cloud Computing", "description": "Core services, IAM, VPC, EC2, and S3", "instructor_id": inst_id},
+                {"id": "docker", "title": "Docker & Kubernetes", "description": "Containers, orchestration, and deployments", "instructor_id": inst_id}
+            ]).execute()
+            print("[INFO] Seeded default courses")
+    except Exception as e:
+        print(f"[WARNING] Database seeding check skipped or failed: {e}")
+
+# Run seed function on startup
+@app.on_event("startup")
+async def startup_event():
+    seed_database()
+
 # ============================================
 # API Endpoints
 # ============================================
+
+# ---------- Authentication ----------
+@app.post("/api/auth/signup")
+async def signup(request: SignUpRequest):
+    """Register a new student or instructor in the database"""
+    if request.role not in ["student", "instructor"]:
+        raise HTTPException(status_code=400, detail="Invalid role. Must be 'student' or 'instructor'.")
+    
+    try:
+        # Check if email is already taken
+        user_res = supabase.table("profiles").select("*").eq("email", request.email).execute()
+        if user_res.data:
+            raise HTTPException(status_code=400, detail="User with this email already exists.")
+        
+        new_user = {
+            "email": request.email,
+            "password": request.password,
+            "full_name": request.full_name,
+            "role": request.role
+        }
+        
+        insert_res = supabase.table("profiles").insert(new_user).execute()
+        if not insert_res.data:
+            raise HTTPException(status_code=500, detail="Failed to create user account.")
+            
+        user_data = insert_res.data[0]
+        
+        # If student, auto-enroll in DevOps Masterclass
+        if request.role == "student":
+            try:
+                supabase.table("enrollments").insert({
+                    "student_id": user_data["id"],
+                    "course_id": "devops",
+                    "progress_percent": 0,
+                    "enrolled_at": datetime.now().isoformat()
+                }).execute()
+            except Exception as enroll_err:
+                print(f"[WARNING] Automatic course enrollment failed: {enroll_err}")
+                
+        return {
+            "success": True, 
+            "user": {
+                "id": user_data["id"], 
+                "full_name": user_data["full_name"], 
+                "role": user_data["role"]
+            }
+        }
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        err_msg = str(e)
+        if "password" in err_msg.lower():
+            raise HTTPException(status_code=500, detail="Database Schema Error: Please ensure your 'profiles' table has a 'password' column (text).")
+        raise HTTPException(status_code=500, detail=f"Registration failed: {err_msg}")
+
+@app.post("/api/auth/signin")
+async def signin(request: SignInRequest):
+    """Authenticate student, instructor, or admin credentials"""
+    try:
+        user_res = supabase.table("profiles")\
+            .select("*")\
+            .eq("email", request.email)\
+            .eq("password", request.password)\
+            .execute()
+            
+        if not user_res.data:
+            raise HTTPException(status_code=401, detail="Invalid email or password.")
+            
+        user_data = user_res.data[0]
+        return {
+            "success": True, 
+            "user": {
+                "id": user_data["id"], 
+                "full_name": user_data["full_name"], 
+                "role": user_data["role"]
+            }
+        }
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        err_msg = str(e)
+        if "password" in err_msg.lower():
+            raise HTTPException(status_code=500, detail="Database Schema Error: Please ensure your 'profiles' table has a 'password' column (text).")
+        raise HTTPException(status_code=500, detail=f"Authentication failed: {err_msg}")
+
 
 # ---------- Health Check ----------
 @app.get("/api/root")
@@ -148,8 +290,10 @@ async def api_root():
     return {
         "status": "running",
         "api": "EduTrack API",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "endpoints": [
+            "/api/auth/signup",
+            "/api/auth/signin",
             "/api/chat",
             "/api/market-insights",
             "/api/student/{id}/progress",
@@ -251,7 +395,6 @@ async def market_insights(skill: str = None):
             }
     except Exception as e:
         print(f"Himalayas API Error: {e}. Returning mock data.")
-        # Fallback to mock job counting
         mock_skills = {
             "Python": 14, "AWS": 10, "Docker": 12, 
             "Kubernetes": 8, "React": 15, "Java": 9,

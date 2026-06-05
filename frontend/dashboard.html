@@ -9,12 +9,22 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/styles.css">
+    <!-- Authorization Role Guard -->
+    <script>
+        (function() {
+            const user = JSON.parse(localStorage.getItem('currentUser'));
+            if (!user || user.role !== 'student') {
+                alert("Access Denied: Student authentication required.");
+                window.location.href = '/';
+            }
+        })();
+    </script>
 </head>
 <body>
     <div class="header">
-        <div class="logo" onclick="location.href='/'">🎓 EduTrack</div>
+        <div class="logo" onclick="location.href='/'">EduTrack</div>
         <div class="user-info">
-            <span>🎓 Student: Rajesh</span>
+            <span id="studentNameDisplay">Student</span>
             <button class="logout-btn" onclick="logout()">Logout</button>
         </div>
     </div>
@@ -24,7 +34,7 @@
         <aside class="sidebar">
             <!-- Course List Card -->
             <div class="card">
-                <h3>📚 My Courses</h3>
+                <h3>My Courses</h3>
                 <div class="course-list">
                     <div class="course-card active" onclick="selectCourse('devops')" id="course-devops">
                         <div class="course-info">
@@ -52,18 +62,18 @@
 
             <!-- Progress Tracker -->
             <div class="card">
-                <h3>📈 My Progress</h3>
+                <h3>My Progress</h3>
                 <div id="progressBar">
                     <div class="loading">Loading progress...</div>
                 </div>
                 <div style="margin-top: 16px; font-size: 13px; color: var(--text-secondary);">
-                    🏆 Quiz Average: <strong id="quizAvgText">0%</strong>
+                    Quiz Average: <strong id="quizAvgText">0%</strong>
                 </div>
             </div>
             
             <!-- Live Market Demand Widget -->
             <div class="card" id="marketWidget">
-                <h3>🔥 Market Demand</h3>
+                <h3>Market Demand</h3>
                 <div class="loading">Loading market trends...</div>
             </div>
         </aside>
@@ -72,20 +82,19 @@
         <main class="main-content">
             <!-- Video Player Card -->
             <div class="card">
-                <h3 id="currentCourseTitle">🎥 DevOps Masterclass - Class 1</h3>
+                <h3 id="currentCourseTitle">DevOps Masterclass - Lesson 1</h3>
                 <div class="video-container">
-                    <!-- Standard DevOps introduction video embed -->
                     <iframe id="courseVideo" src="https://www.youtube.com/embed/j5Zsa_eOXeU" allowfullscreen></iframe>
                 </div>
                 <div class="video-controls">
-                    <button id="btnPrevLesson" onclick="changeLesson(-1)">← Previous Lesson</button>
-                    <button id="btnNextLesson" onclick="changeLesson(1)">Next Lesson →</button>
+                    <button id="btnPrevLesson" onclick="changeLesson(-1)">Previous Lesson</button>
+                    <button id="btnNextLesson" onclick="changeLesson(1)">Next Lesson</button>
                 </div>
             </div>
             
             <!-- Quiz Card -->
             <div class="card">
-                <h3>📝 Course Checkpoint Quiz</h3>
+                <h3>Course Checkpoint Quiz</h3>
                 <div id="quizContainer">
                     <h4 style="margin-bottom: 12px; font-size: 15px;" id="quizQuestionText">What is the primary difference between a Docker container and a Virtual Machine (VM)?</h4>
                     <div class="course-list" style="margin-bottom: 16px;">
@@ -108,7 +117,7 @@
 
             <!-- Doubts Forum Card -->
             <div class="card">
-                <h3>💬 Doubts Forum</h3>
+                <h3>Doubts Forum</h3>
                 <div style="display: flex; gap: 12px; margin-bottom: 20px;">
                     <input type="text" id="doubtInput" placeholder="Ask a question about this course..." style="flex:1; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 14px; outline: none;">
                     <button class="btn-primary" style="background: var(--primary-gradient); color: white; padding: 10px 20px; font-size: 14px;" onclick="postDoubt()">Ask Doubt</button>
@@ -120,10 +129,10 @@
 
             <!-- AI Tutor Chat Card -->
             <div class="card">
-                <h3>🤖 AI Tutor Assistant</h3>
+                <h3>AI Tutor Assistant</h3>
                 <div class="chat-messages" id="chatMessages">
                     <div class="message ai">
-                        <div class="message-content">Hello Rajesh! I am your AI study assistant. Ask me anything about Docker, AWS, or DevOps!</div>
+                        <div class="message-content">Hello! I am your AI study assistant. Ask me anything about Docker, AWS, or DevOps!</div>
                     </div>
                 </div>
                 <div class="chat-input">
@@ -136,7 +145,6 @@
     
     <script src="/script.js"></script>
     <script>
-        // Start dashboard initialization
         document.addEventListener("DOMContentLoaded", () => {
             initializeStudentDashboard();
         });

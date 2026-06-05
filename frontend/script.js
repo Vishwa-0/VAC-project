@@ -1,22 +1,31 @@
 // Dynamic API Base URL detection
 const API_BASE_URL = window.location.origin;
 
-// State management
-let currentStudentId = "student_123";
-let currentInstructorId = "instructor_abc";
-let currentCourseId = "devops";
+// Application State
+let currentUser = null;
+let activeRole = 'student'; // student, instructor, admin
+let authMode = 'signin';     // signin, signup
+let currentCourseId = 'devops';
 let activeLessonIndex = 0;
 
-// Mock lesson list per course
+// Load user session on dashboard pages
+if (typeof window !== 'undefined') {
+    const sessionUser = localStorage.getItem('currentUser');
+    if (sessionUser) {
+        currentUser = JSON.parse(sessionUser);
+    }
+}
+
+// Course lesson outlines
 const courseLessons = {
     devops: [
         { title: "DevOps Masterclass - Lesson 1: Introduction to CI/CD", video: "https://www.youtube.com/embed/j5Zsa_eOXeU" },
-        { title: "DevOps Masterclass - Lesson 2: Git Workflows & Actions", video: "https://www.youtube.com/embed/R8_veQiYBhI" },
+        { title: "DevOps Masterclass - Lesson 2: Git Workflows and Actions", video: "https://www.youtube.com/embed/R8_veQiYBhI" },
         { title: "DevOps Masterclass - Lesson 3: Docker Containers Essentials", video: "https://www.youtube.com/embed/3c-iLjReF_A" }
     ],
     aws: [
         { title: "AWS Cloud - Lesson 1: Cloud Architecture Fundamentals", video: "https://www.youtube.com/embed/3hLmDS179YE" },
-        { title: "AWS Cloud - Lesson 2: EC2 & VPC Networking Setup", video: "https://www.youtube.com/embed/Ia-UEYYR44s" }
+        { title: "AWS Cloud - Lesson 2: EC2 and VPC Networking Setup", video: "https://www.youtube.com/embed/Ia-UEYYR44s" }
     ],
     docker: [
         { title: "Docker & Kubernetes - Lesson 1: Containerizing Apps", video: "https://www.youtube.com/embed/fqMOX6JJhGo" },
@@ -53,11 +62,199 @@ const courseQuizzes = {
 };
 
 // ============================================
+// Authentication & Modals (Homepage)
+// ============================================
+function openAuthModal(role) {
+    activeRole = role;
+    authMode = 'signin';
+    
+    // Set headers
+    const titleEl = document.getElementById('authModalTitle');
+    if (titleEl) {
+        if (role === 'student') titleEl.textContent = 'Student Access Portal';
+        else if (role === 'instructor') titleEl.textContent = 'Instructor Access Portal';
+        else if (role === 'admin') titleEl.textContent = 'Admin Access Portal';
+    }
+
+    // Toggle registration tab. Hide for Admin (admin account is pre-seeded)
+    const tabsContainer = document.getElementById('authTabsContainer');
+    if (tabsContainer) {
+        if (role === 'admin') {
+            tabsContainer.style.display = 'none';
+        } else {
+            tabsContainer.style.display = 'flex';
+        }
+    }
+
+    setAuthMode('signin');
+    
+    // Clear inputs
+    const form = document.getElementById('authForm');
+    if (form) form.reset();
+
+    const overlay = document.getElementById('authModalOverlay');
+    if (overlay) overlay.classList.add('active');
+}
+
+function closeAuthModal() {
+    const overlay = document.getElementById('authModalOverlay');
+    if (overlay) overlay.classList.remove('active');
+}
+
+function setAuthMode(mode) {
+    authMode = mode;
+    const tabSignin = document.getElementById('tabSignin');
+    const tabSignup = document.getElementById('tabSignup');
+    const groupName = document.getElementById('groupFullName');
+    const btnSubmit = document.getElementById('authSubmitButton');
+
+    if (mode === 'signin') {
+        if (tabSignin) tabSignin.classList.add('active');
+        if (tabSignup) tabSignup.classList.remove('active');
+        if (groupName) groupName.style.display = 'none';
+        if (btnSubmit) btnSubmit.textContent = 'Sign In';
+        const nameInput = document.getElementById('regFullName');
+        if (nameInput) nameInput.removeAttribute('required');
+    } else {
+        if (tabSignin) tabSignin.classList.remove('active');
+        if (tabSignup) tabSignup.classList.add('active');
+        if (groupName) groupName.style.display = 'block';
+        if (btnSubmit) btnSubmit.textContent = 'Create Account';
+        const nameInput = document.getElementById('regFullName');
+        if (nameInput) nameInput.setAttribute('required', 'true');
+    }
+}
+
+async function handleAuthSubmit(event) {
+    event.preventDefault();
+    
+    const email = document.getElementById('authEmail').value.trim();
+    const password = document.getElementById('authPassword').value.trim();
+    
+    if (authMode === 'signin') {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/auth/signin`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: email, password: password })
+            });
+            const data = await response.json();
+            
+            if (response.ok && data.success) {
+                // Verify returned user matches the portal role they tried to access
+                if (data.user.role !== activeRole) {
+                    showToast(`Access Denied: Account is registered as ${data.user.role.toUpperCase()}`, 'error');
+                    return;
+                }
+                
+                localStorage.setItem('currentUser', JSON.stringify(data.user));
+                currentUser = data.user;
+                showToast(`Welcome back, ${data.user.full_name}!`, 'success');
+                
+                setTimeout(() => {
+                    if (data.user.role === 'student') location.href = '/dashboard';
+                    else if (data.user.role === 'instructor') location.href = '/instructor';
+                    else if (data.user.role === 'admin') location.href = '/admin';
+                }, 800);
+            } else {
+                showToast(data.detail || 'Incorrect credentials', 'error');
+            }
+        } catch (err) {
+            console.error('Sign In Error:', err);
+            showToast('Authentication failed', 'error');
+        }
+    } else {
+        // Sign Up Mode
+        const fullName = document.getElementById('regFullName').value.trim();
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/auth/signup`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    full_name: fullName,
+                    email: email,
+                    password: password,
+                    role: activeRole
+                })
+            });
+            const data = await response.json();
+            
+            if (response.ok && data.success) {
+                localStorage.setItem('currentUser', JSON.stringify(data.user));
+                currentUser = data.user;
+                showToast('Registration successful! Accessing portal...', 'success');
+                
+                setTimeout(() => {
+                    if (data.user.role === 'student') location.href = '/dashboard';
+                    else if (data.user.role === 'instructor') location.href = '/instructor';
+                }, 800);
+            } else {
+                showToast(data.detail || 'Sign up failed', 'error');
+            }
+        } catch (err) {
+            console.error('Sign Up Error:', err);
+            showToast('Registration service offline', 'error');
+        }
+    }
+}
+
+// ============================================
+// Homepage Job Market Preview Modal
+// ============================================
+async function openMarketPreview() {
+    const overlay = document.getElementById('marketPreviewOverlay');
+    if (overlay) overlay.classList.add('active');
+    
+    const container = document.getElementById('marketPreviewWidget');
+    if (!container) return;
+    
+    container.innerHTML = '<div class="loading">Loading current market data...</div>';
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/market-insights?skill=developer`);
+        const data = await response.json();
+        
+        let html = '<div style="margin-bottom:16px;"><strong>Active Technical Jobs Counted: ' + (data.total_jobs || 0) + '</strong></div>';
+        if (data.skills) {
+            const maxVal = Math.max(...Object.values(data.skills));
+            Object.entries(data.skills).forEach(([skill, val]) => {
+                const percent = maxVal > 0 ? (val / maxVal) * 100 : 0;
+                html += `
+                    <div class="skill-item">
+                        <span class="skill-name">${skill}</span>
+                        <div class="skill-bar">
+                            <div class="skill-bar-fill" style="width: ${percent}%"></div>
+                        </div>
+                        <span class="skill-count">${val} posts</span>
+                    </div>
+                `;
+            });
+        }
+        container.innerHTML = html;
+    } catch (err) {
+        container.innerHTML = '<div class="loading" style="color:var(--accent-red)">Failed to load hiring trends.</div>';
+    }
+}
+
+function closeMarketPreview() {
+    const overlay = document.getElementById('marketPreviewOverlay');
+    if (overlay) overlay.classList.remove('active');
+}
+
+// ============================================
 // Student Dashboard
 // ============================================
 async function initializeStudentDashboard() {
+    if (!currentUser) return;
+    
+    // Inject student name in header
+    const nameDisplay = document.getElementById('studentNameDisplay');
+    if (nameDisplay) {
+        nameDisplay.textContent = `Student: ${currentUser.full_name}`;
+    }
+
     loadMarketInsights();
-    await loadStudentProgress(currentStudentId);
+    await loadStudentProgress(currentUser.id);
     loadDoubts(currentCourseId);
     renderActiveLesson();
     renderQuiz();
@@ -82,6 +279,11 @@ async function loadStudentProgress(studentId) {
                     </div>
                 `;
             });
+            
+            // If the student has no enrollments display a helper message
+            if (data.enrollments.length === 0) {
+                html = '<div style="font-size:13px; color:var(--text-secondary);">Not enrolled in any courses yet.</div>';
+            }
             progressContainer.innerHTML = html;
         }
 
@@ -92,6 +294,8 @@ async function loadStudentProgress(studentId) {
         }
         
         // Trigger risk alert
+        const alerts = document.querySelectorAll('.risk-banner');
+        alerts.forEach(el => el.remove());
         if (data.at_risk_score > 0.6) {
             showRiskAlert();
         }
@@ -101,7 +305,6 @@ async function loadStudentProgress(studentId) {
 }
 
 function showRiskAlert() {
-    if (document.querySelector('.risk-banner')) return;
     const banner = document.createElement('div');
     banner.className = 'risk-banner';
     banner.style.cssText = `
@@ -114,7 +317,7 @@ function showRiskAlert() {
         font-size: 14px;
         border: 1px solid #ffcdd2;
     `;
-    banner.innerHTML = "⚠️ Your engagement index is low. If you need support, message your instructor, use our AI Tutor, or complete active lessons!";
+    banner.innerHTML = "[Warning] Your course engagement metric has dropped. Please review materials, attempt checkpoint quizzes, or message your tutor.";
     const mainContent = document.querySelector('.main-content');
     if (mainContent) {
         mainContent.insertBefore(banner, mainContent.firstChild);
@@ -142,7 +345,7 @@ function renderActiveLesson() {
     const lessons = courseLessons[currentCourseId];
     
     if (titleEl && iframeEl && lessons && lessons[activeLessonIndex]) {
-        titleEl.textContent = `🎥 ${lessons[activeLessonIndex].title}`;
+        titleEl.textContent = lessons[activeLessonIndex].title;
         iframeEl.src = lessons[activeLessonIndex].video;
     }
 }
@@ -186,6 +389,8 @@ function renderQuiz() {
 }
 
 async function submitActiveQuiz() {
+    if (!currentUser) return;
+    
     const selected = document.querySelector('input[name="quizOpt"]:checked');
     if (!selected) {
         showToast("Please choose an answer first!", "error");
@@ -201,7 +406,7 @@ async function submitActiveQuiz() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                student_id: currentStudentId,
+                student_id: currentUser.id,
                 course_id: currentCourseId,
                 question: quiz.question,
                 answer: chosenOption.text,
@@ -212,12 +417,11 @@ async function submitActiveQuiz() {
         const data = await response.json();
         if (data.success) {
             if (chosenOption.isCorrect) {
-                showToast("🎉 Correct answer! Progress +5%", "success");
+                showToast("Correct answer! Progress updated", "success");
             } else {
-                showToast("❌ Incorrect answer! Try studying the lesson again.", "error");
+                showToast("Incorrect answer! Study the lessons again.", "error");
             }
-            // Reload progress
-            await loadStudentProgress(currentStudentId);
+            await loadStudentProgress(currentUser.id);
         }
     } catch (error) {
         console.error('Quiz submission error:', error);
@@ -236,7 +440,7 @@ async function loadMarketInsights() {
         const response = await fetch(`${API_BASE_URL}/api/market-insights?skill=developer`);
         const data = await response.json();
         
-        let html = '<h3>🔥 Live Job Market Demand</h3>';
+        let html = '<h3>Live Job Market Demand</h3>';
         if (data.skills) {
             const maxVal = Math.max(...Object.values(data.skills));
             Object.entries(data.skills).forEach(([skill, val]) => {
@@ -257,7 +461,7 @@ async function loadMarketInsights() {
         widget.innerHTML = html;
     } catch (error) {
         console.error('Market loading error:', error);
-        widget.innerHTML = '<h3>🔥 Live Job Market Demand</h3><div class="loading">Data offline.</div>';
+        widget.innerHTML = '<h3>Live Job Market Demand</h3><div class="loading">Data offline.</div>';
     }
 }
 
@@ -265,6 +469,7 @@ async function loadMarketInsights() {
 // Chatbot
 // ============================================
 async function askQuestion() {
+    if (!currentUser) return;
     const input = document.getElementById('chatInput');
     if (!input) return;
     
@@ -274,14 +479,13 @@ async function askQuestion() {
     addMessage(question, 'user');
     input.value = '';
     
-    // Add typing loader
     addMessage('Tutor thinking...', 'ai', true);
     
     try {
         const response = await fetch(`${API_BASE_URL}/api/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question: question, context: currentStudentId })
+            body: JSON.stringify({ question: question, context: currentUser.id })
         });
         
         const data = await response.json();
@@ -334,7 +538,7 @@ async function loadDoubts(courseId) {
                 html += `
                     <div class="doubt-card">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                            <div class="doubt-question">❓ ${escapeHtml(doubt.question)}</div>
+                            <div class="doubt-question">Question: ${escapeHtml(doubt.question)}</div>
                             ${statusBadge}
                         </div>
                         <div class="doubt-meta">Asked by ${author} • ${formatDate(doubt.created_at)}</div>
@@ -352,7 +556,6 @@ async function loadDoubts(courseId) {
                     });
                     html += '</div>';
                 }
-                
                 html += '</div>';
             });
         } else {
@@ -365,6 +568,7 @@ async function loadDoubts(courseId) {
 }
 
 async function postDoubt() {
+    if (!currentUser) return;
     const input = document.getElementById('doubtInput');
     if (!input) return;
     
@@ -379,7 +583,7 @@ async function postDoubt() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                student_id: currentStudentId,
+                student_id: currentUser.id,
                 course_id: currentCourseId,
                 question: query
             })
@@ -401,6 +605,12 @@ async function postDoubt() {
 // Instructor Dashboard
 // ============================================
 async function initializeInstructorDashboard() {
+    if (!currentUser) return;
+    
+    // Inject instructor name
+    const display = document.getElementById('instructorNameDisplay');
+    if (display) display.textContent = `Instructor: ${currentUser.full_name}`;
+
     await loadAtRiskStudents();
     await loadInstructorDoubts();
 }
@@ -410,7 +620,7 @@ async function loadAtRiskStudents() {
     if (!container) return;
     
     try {
-        const response = await fetch(`${API_BASE_URL}/api/instructor/${currentInstructorId}/at-risk-students`);
+        const response = await fetch(`${API_BASE_URL}/api/instructor/${currentUser.id}/at-risk-students`);
         const data = await response.json();
         
         let html = `
@@ -430,7 +640,6 @@ async function loadAtRiskStudents() {
         `;
         
         if (data.at_risk_students && data.at_risk_students.length > 0) {
-            // Update quick stats count
             const riskCountText = document.getElementById('riskCountText');
             if (riskCountText) riskCountText.textContent = data.at_risk_students.length;
 
@@ -492,7 +701,7 @@ async function loadInstructorDoubts() {
                 html += `
                     <div class="doubt-card">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                            <div class="doubt-question">❓ ${escapeHtml(doubt.question)}</div>
+                            <div class="doubt-question">Question: ${escapeHtml(doubt.question)}</div>
                             ${statusBadge}
                         </div>
                         <div class="doubt-meta">Asked by ${author} • ${formatDate(doubt.created_at)}</div>
@@ -519,7 +728,6 @@ async function loadInstructorDoubts() {
                         </div>
                     `;
                 }
-                
                 html += '</div>';
             });
         } else {
@@ -532,6 +740,7 @@ async function loadInstructorDoubts() {
 }
 
 async function submitInstructorReply(doubtId) {
+    if (!currentUser) return;
     const input = document.getElementById(`replyInput-${doubtId}`);
     if (!input) return;
     
@@ -547,7 +756,7 @@ async function submitInstructorReply(doubtId) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 doubt_id: doubtId,
-                user_id: currentInstructorId,
+                user_id: currentUser.id,
                 reply: replyText
             })
         });
@@ -556,7 +765,7 @@ async function submitInstructorReply(doubtId) {
         if (data.success) {
             showToast("Reply posted successfully!", "success");
             loadInstructorDoubts();
-            loadAtRiskStudents(); // Risk calculation depends on activity
+            loadAtRiskStudents();
         }
     } catch (error) {
         console.error('Error replying:', error);
@@ -633,7 +842,6 @@ function showNewBatchForm() {
     const size = prompt("Enter Max Seats:", "30");
     if (!size) return;
     
-    // Add row to table
     const tableBody = document.querySelector('#batchTable tbody');
     if (tableBody) {
         const tr = document.createElement('tr');
@@ -642,7 +850,7 @@ function showNewBatchForm() {
             <td>${escapeHtml(course)}</td>
             <td>0/${escapeHtml(size)}</td>
             <td>${new Date().toLocaleDateString()}</td>
-            <td><span style="color:var(--accent-amber);">● Pending Launch</span></td>
+            <td><span style="color:var(--accent-amber);">Pending Launch</span></td>
         `;
         tableBody.appendChild(tr);
         showToast(`Batch ${name} created!`, "success");
@@ -654,6 +862,7 @@ function showNewBatchForm() {
 // ============================================
 function logout() {
     showToast("Logging out...", "info");
+    localStorage.removeItem('currentUser');
     setTimeout(() => {
         location.href = '/';
     }, 1000);

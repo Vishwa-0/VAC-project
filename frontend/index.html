@@ -13,11 +13,11 @@
 <body>
     <nav class="navbar">
         <div class="nav-container">
-            <div class="logo" onclick="location.href='/'">🎓 EduTrack</div>
+            <div class="logo" onclick="location.href='/'">EduTrack</div>
             <div class="nav-links">
-                <a href="/dashboard">Student Portal</a>
-                <a href="/instructor">Instructor Dashboard</a>
-                <a href="/admin">Admin Panel</a>
+                <a href="#" onclick="openAuthModal('student')">Student Portal</a>
+                <a href="#" onclick="openAuthModal('instructor')">Instructor Dashboard</a>
+                <a href="#" onclick="openAuthModal('admin')">Admin Panel</a>
             </div>
         </div>
     </nav>
@@ -25,27 +25,100 @@
     <header class="hero">
         <h1>Empower Your Learning Journey</h1>
         <p>An AI-powered training platform with real-time job market intelligence</p>
-        <button class="btn-primary" onclick="location.href='/dashboard'">Get Started →</button>
+        <button class="btn-primary" onclick="openAuthModal('student')">Get Started</button>
     </header>
     
     <section class="features">
-        <div class="feature-card">
-            <div class="feature-icon">🤖</div>
+        <div class="feature-card" onclick="openAuthModal('student')">
+            <div class="feature-icon">Tutor</div>
             <h3>AI Tutor Assistant</h3>
-            <p>Get instant answers to complex queries and homework doubts 24/7.</p>
+            <p>Get instant answers to complex queries and homework doubts 24/7. Click here to log in and chat.</p>
         </div>
-        <div class="feature-card">
-            <div class="feature-icon">📊</div>
+        <div class="feature-card" onclick="openMarketPreview()">
+            <div class="feature-icon">Jobs</div>
             <h3>Market Insights</h3>
-            <p>Access real-time, live hiring statistics for technical skills in the job market.</p>
+            <p>Access real-time, live hiring statistics for technical skills in the job market. Click here for a quick preview.</p>
         </div>
-        <div class="feature-card">
-            <div class="feature-icon">🎯</div>
+        <div class="feature-card" onclick="openAuthModal('student')">
+            <div class="feature-icon">Target</div>
             <h3>Smart Progress</h3>
-            <p>Track your learning progress, complete course modules, and take interactive quizzes.</p>
+            <p>Track your learning progress, complete course modules, and take interactive quizzes. Click here to access your dashboard.</p>
         </div>
     </section>
+
+    <!-- ============================================ -->
+    <!-- Modal: Authentication (Sign In & Sign Up) -->
+    <!-- ============================================ -->
+    <div class="modal-overlay" id="authModalOverlay">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h3 id="authModalTitle">Access Portal</h3>
+                <button class="btn-close" onclick="closeAuthModal()">X</button>
+            </div>
+            
+            <!-- Auth Selection Tabs -->
+            <div class="modal-tab-group" id="authTabsContainer">
+                <div class="modal-tab active" id="tabSignin" onclick="setAuthMode('signin')">Sign In</div>
+                <div class="modal-tab" id="tabSignup" onclick="setAuthMode('signup')">Sign Up</div>
+            </div>
+            
+            <div class="modal-body">
+                <form id="authForm" onsubmit="handleAuthSubmit(event)">
+                    <!-- Full name (Sign Up only) -->
+                    <div class="form-group" id="groupFullName" style="display: none;">
+                        <label for="regFullName">Full Name</label>
+                        <input type="text" id="regFullName" placeholder="Enter your full name">
+                    </div>
+                    
+                    <!-- Email -->
+                    <div class="form-group">
+                        <label for="authEmail">Email Address</label>
+                        <input type="email" id="authEmail" required placeholder="Enter email address">
+                    </div>
+                    
+                    <!-- Password -->
+                    <div class="form-group">
+                        <label for="authPassword">Password</label>
+                        <input type="password" id="authPassword" required placeholder="Enter password">
+                    </div>
+                    
+                    <button class="btn-primary" type="submit" style="background: var(--primary-gradient); color: white; width: 100%; font-size: 14px; padding: 12px 0; margin-top: 10px;" id="authSubmitButton">Sign In</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- Modal: Job Market Preview -->
+    <!-- ============================================ -->
+    <div class="modal-overlay" id="marketPreviewOverlay">
+        <div class="modal-container" style="max-width: 520px;">
+            <div class="modal-header">
+                <h3>Live Job Market Demand</h3>
+                <button class="btn-close" onclick="closeMarketPreview()">X</button>
+            </div>
+            <div class="modal-body">
+                <div id="marketPreviewWidget">
+                    <div class="loading">Fetching current market data...</div>
+                </div>
+                <div style="margin-top: 16px; font-size: 12px; color: var(--text-secondary); text-align: center;">
+                    Powered by Himalayas API
+                </div>
+            </div>
+        </div>
+    </div>
     
     <script src="/script.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            // Check if user is already logged in and redirect
+            const user = JSON.parse(localStorage.getItem('currentUser'));
+            if (user && user.role) {
+                if (user.role === 'student') location.href = '/dashboard';
+                else if (user.role === 'instructor') location.href = '/instructor';
+                else if (user.role === 'admin') location.href = '/admin';
+            }
+        });
+    </script>
 </body>
 </html>
