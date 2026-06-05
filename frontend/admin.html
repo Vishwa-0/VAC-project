@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - EduTrack</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="header">
+        <div class="logo" onclick="location.href='/'">🎓 EduTrack</div>
+        <div class="user-info">
+            <span>👑 Admin</span>
+            <button class="logout-btn" onclick="logout()">Logout</button>
+        </div>
+    </div>
+    
+    <div class="dashboard-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <!-- Overview -->
+            <div class="card">
+                <h3>📊 Institute Overview</h3>
+                <div class="stat-list">
+                    <div class="progress-label">👥 Total Students: <strong>342</strong></div>
+                    <div class="progress-label">📚 Active Courses: <strong>8</strong></div>
+                    <div class="progress-label">✅ Completion Rate: <strong>67%</strong></div>
+                    <div class="progress-label">💰 Revenue (MTD): <strong>₹4.2L</strong></div>
+                </div>
+            </div>
+            
+            <!-- System Status -->
+            <div class="card">
+                <h3>⚙️ System Health</h3>
+                <div class="stat-list">
+                    <div class="progress-label" style="color: var(--accent-green);">● Groq AI - Operational</div>
+                    <div class="progress-label" style="color: var(--accent-green);">● Himalayas API - Operational</div>
+                    <div class="progress-label" style="color: var(--accent-amber);">● LRS Sync - Syncing</div>
+                    <div class="progress-label" style="color: var(--accent-green);">● Supabase - Connected</div>
+                </div>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Market Intelligence -->
+            <div class="card">
+                <h3>📈 Job Market Intelligence</h3>
+                <div id="marketIntelligence">
+                    <div class="loading">Loading market demand indicators...</div>
+                </div>
+                <div style="margin-top: 18px; padding: 14px; background: #e0e7ff; color: #3730a3; border-radius: 8px; font-size: 13px; font-weight: 600;">
+                    💡 <strong>AI Strategy Suggestion:</strong> Docker and Kubernetes demand is up 42% this quarter. Consider adding more advanced orchestration topics to boost DevOps enrollments.
+                </div>
+            </div>
+            
+            <!-- ROI Analysis -->
+            <div class="card">
+                <h3>📊 Course ROI Analysis</h3>
+                <div id="roiTable">
+                    <table class="risk-table">
+                        <thead>
+                            <tr><th>Course</th><th>Revenue</th><th>Expense</th><th>ROI</th><th>Status</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>DevOps Masterclass</td><td>₹1.2L</td><td>₹40K</td><td style="color: var(--accent-green);">+200%</td><td>✅ Profitable</td></tr>
+                            <tr><td>AWS Cloud</td><td>₹98K</td><td>₹35K</td><td style="color: var(--accent-green);">+180%</td><td>✅ Profitable</td></tr>
+                            <tr><td>Python Programming</td><td>₹85K</td><td>₹25K</td><td style="color: var(--accent-green);">+240%</td><td>🔥 High ROI</td></tr>
+                            <tr><td>Data Science</td><td>₹45K</td><td>₹50K</td><td style="color: var(--accent-red);">-10%</td><td>❌ Review Needed</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Batch Management -->
+            <div class="card">
+                <h3>🏢 Course Batch Management</h3>
+                <div id="batchTable">
+                    <table class="risk-table">
+                        <thead>
+                            <tr><th>Batch Name</th><th>Course</th><th>Size</th><th>Launch Date</th><th>Status</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>DevOps-June</td><td>DevOps Masterclass</td><td>32/40</td><td>01-06-2026</td><td>▶ Active</td></tr>
+                            <tr><td>AWS-June</td><td>AWS Cloud Computing</td><td>28/35</td><td>05-06-2026</td><td>▶ Active</td></tr>
+                            <tr><td>Python-May</td><td>Python Programming</td><td>45/45</td><td>01-05-2026</td><td>✓ Completed</td></tr>
+                            <tr><td>DS-June</td><td>Data Science</td><td>12/30</td><td>10-06-2026</td><td>⚠️ Low Seats</td></tr>
+                        </tbody>
+                    </table>
+                    <button class="btn-primary" style="background: var(--primary-gradient); color: white; width: 100%; font-size: 14px; margin-top: 16px; padding: 10px 0;" onclick="showNewBatchForm()">+ Create New Batch</button>
+                </div>
+            </div>
+            
+            <!-- Retention report -->
+            <div class="card">
+                <h3>📉 Student Retention Report</h3>
+                <div class="skill-item">
+                    <span class="skill-name">DevOps</span>
+                    <div class="skill-bar"><div class="skill-bar-fill" style="width: 12%"></div></div>
+                    <span class="skill-count">12% Drop</span>
+                </div>
+                <div class="skill-item">
+                    <span class="skill-name">AWS</span>
+                    <div class="skill-bar"><div class="skill-bar-fill" style="width: 18%"></div></div>
+                    <span class="skill-count">18% Drop</span>
+                </div>
+                <div class="skill-item">
+                    <span class="skill-name">Python</span>
+                    <div class="skill-bar"><div class="skill-bar-fill" style="width: 8%"></div></div>
+                    <span class="skill-count">8% Drop ✅</span>
+                </div>
+                <div class="skill-item">
+                    <span class="skill-name">Data Science</span>
+                    <div class="skill-bar"><div class="skill-bar-fill" style="width: 25%"></div></div>
+                    <span class="skill-count">25% Drop 🔴</span>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <script src="/script.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            initializeAdminDashboard();
+        });
+    </script>
+</body>
+</html>

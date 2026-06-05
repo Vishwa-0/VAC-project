@@ -1,0 +1,577 @@
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+from typing import List, Optional
+from datetime import datetime, timedelta
+import os
+import httpx
+from dotenv import load_dotenv
+from groq import Groq
+from .supabase_client import get_supabase_client
+
+load_dotenv()
+
+# Initialize FastAPI
+app = FastAPI(title="EduTrack API", description="Training Institute Platform")
+
+# CORS Middleware (for Render)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with your Render URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Initialize clients
+supabase = get_supabase_client()
+
+# ============================================
+# Groq Client Initialization & Mock Fallback
+# ============================================
+class MockChatCompletions:
+    def create(self, model, messages, temperature, max_tokens):
+        question = messages[-1]["content"].lower()
+        if "docker" in question:
+            answer = "Docker is a tool that containerizes applications. Containers package an application with all its requirements, sharing the host OS kernel. This makes them lightweight and fast to boot."
+        elif "kubernetes" in question or "k8s" in question:
+            answer = "Kubernetes is an open-source orchestration tool that manages containers. It handles auto-scaling, deployments, load balancing, and organizes containers into logical groups called Pods."
+        elif "ci/cd" in question:
+            answer = "CI/CD stands for Continuous Integration and Continuous Deployment. It automates testing, integration, and delivery of code commits to production, ensuring frequent and safe releases."
+        elif "risk" in question or "score" in question:
+            answer = "The risk score measures a student's engagement. It weights quiz scores (40%), progress percent (30%), and days inactive (30%) to flag students needing academic assistance."
+        else:
+            answer = "That is a great question! As your EduTrack AI tutor, I suggest checking our course sections on Docker, Kubernetes, and AWS. Let me know what specific part I can clarify!"
+        
+        class MockChoice:
+            class MockMessage:
+                def __init__(self, content):
+                    self.content = content
+            def __init__(self, content):
+                self.message = MockChoice.MockMessage(content)
+                
+        class MockResponse:
+            def __init__(self, content):
+                self.choices = [MockChoice(content)]
+                
+        return MockResponse(answer)
+
+class MockGroq:
+    def __init__(self, api_key=None):
+        self.chat = type('MockChat', (), {'completions': MockChatCompletions()})()
+
+groq_key = os.getenv("GROQ_API_KEY")
+if groq_key and groq_key != "YOUR_GROQ_API_KEY":
+    try:
+        groq_client = Groq(api_key=groq_key)
+    except Exception as e:
+        print(f"[WARNING] Groq client initialization failed: {e}. Falling back to Mock AI.")
+        groq_client = MockGroq()
+else:
+    print("[WARNING] GROQ_API_KEY not found in environment. Falling back to Mock AI tutor response.")
+    groq_client = MockGroq()
+
+# ============================================
+# Pydantic Models
+# ============================================
+
+class ChatRequest(BaseModel):
+    question: str
+    context: Optional[str] = None
+
+class StudentProgress(BaseModel):
+    student_id: str
+    course_id: str
+
+class EnrollmentRequest(BaseModel):
+    student_id: str
+    course_id: str
+
+class QuizAttempt(BaseModel):
+    student_id: str
+    course_id: str
+    question: str
+    answer: str
+    is_correct: bool
+
+class DoubtRequest(BaseModel):
+    student_id: str
+    course_id: str
+    question: str
+
+class DoubtReply(BaseModel):
+    doubt_id: str
+    user_id: str
+    reply: str
+
+# ============================================
+# Helper Functions
+# ============================================
+
+def calculate_risk_score(enrollments, quiz_scores, last_active):
+    """Simple rule-based risk score (0-1, higher = more at risk)"""
+    risk = 0
+    
+    # Factor 1: Progress (30% weight)
+    if enrollments:
+        avg_progress = sum(e.get("progress_percent", 0) for e in enrollments) / len(enrollments)
+        risk += (1 - avg_progress / 100) * 0.3
+    
+    # Factor 2: Quiz performance (40% weight)
+    if quiz_scores:
+        correct_rate = sum(quiz_scores) / len(quiz_scores) if quiz_scores else 0
+        risk += (1 - correct_rate) * 0.4
+    
+    # Factor 3: Last activity (30% weight)
+    if last_active:
+        try:
+            if isinstance(last_active, str):
+                last_active_clean = last_active.replace('Z', '+00:00')
+                days_inactive = (datetime.now() - datetime.fromisoformat(last_active_clean)).days
+            else:
+                days_inactive = 0
+        except Exception:
+            days_inactive = 0
+        risk += min(days_inactive / 14, 1) * 0.3
+    
+    return min(risk, 1.0)
+
+# ============================================
+# API Endpoints
+# ============================================
+
+# ---------- Health Check ----------
+@app.get("/api/root")
+async def api_root():
+    return {
+        "status": "running",
+        "api": "EduTrack API",
+        "version": "1.0.0",
+        "endpoints": [
+            "/api/chat",
+            "/api/market-insights",
+            "/api/student/{id}/progress",
+            "/api/enroll",
+            "/api/quiz/submit",
+            "/api/doubts/{course_id}",
+            "/api/instructor/{id}/at-risk-students",
+            "/api/admin/market-intelligence"
+        ]
+    }
+
+
+# ---------- Groq Chat API ----------
+@app.post("/api/chat")
+async def chat(request: ChatRequest):
+    """AI Chatbot endpoint using Groq / Mock AI"""
+    try:
+        system_prompt = """You are a friendly, patient tutor for a training institute. 
+        Explain technical concepts in simple, easy-to-understand language. 
+        Keep answers under 3 sentences. If the question is off-topic, politely redirect.
+        """
+        
+        response = groq_client.chat.completions.create(
+            model="mixtral-8x7b-32768",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": request.question}
+            ],
+            temperature=0.7,
+            max_tokens=300
+        )
+        
+        answer = response.choices[0].message.content
+        
+        # Log activity to Supabase
+        try:
+            supabase.table("activity_log").insert({
+                "student_id": request.context or "anonymous",
+                "activity_type": "chat_query",
+                "metadata": {"question": request.question[:100], "answer": answer[:100]}
+            }).execute()
+        except Exception as err:
+            print(f"Logging activity failed: {err}")
+        
+        return {"answer": answer, "success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------- Himalayas Market Insights ----------
+@app.get("/api/market-insights")
+async def market_insights(skill: str = None):
+    """Get live job market data from Himalayas API with fallback to cached mock data"""
+    query = skill if skill else "developer"
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://himalayas.app/jobs/api/search",
+                params={
+                    "country": "in",
+                    "query": query,
+                    "sort": "recent",
+                    "limit": 20
+                },
+                timeout=10.0
+            )
+            
+            data = response.json()
+            jobs = data.get("jobs", [])
+            
+            skills_count = {
+                "Python": 0, "AWS": 0, "Docker": 0, 
+                "Kubernetes": 0, "React": 0, "Java": 0,
+                "JavaScript": 0, "DevOps": 0
+            }
+            
+            for job in jobs:
+                desc = job.get("description", "").lower()
+                for skill_name in skills_count.keys():
+                    if skill_name.lower() in desc:
+                        skills_count[skill_name] += 1
+            
+            # Cache in Supabase
+            try:
+                supabase.table("market_insights").upsert({
+                    "skill": query,
+                    "job_count": len(jobs),
+                    "skills_data": skills_count,
+                    "last_updated": datetime.now().isoformat()
+                }).execute()
+            except Exception as err:
+                print(f"Caching market insights failed: {err}")
+            
+            return {
+                "total_jobs": len(jobs),
+                "skills": skills_count,
+                "sample_jobs": jobs[:5],
+                "source": "Himalayas API"
+            }
+    except Exception as e:
+        print(f"Himalayas API Error: {e}. Returning mock data.")
+        # Fallback to mock job counting
+        mock_skills = {
+            "Python": 14, "AWS": 10, "Docker": 12, 
+            "Kubernetes": 8, "React": 15, "Java": 9,
+            "JavaScript": 18, "DevOps": 11
+        }
+        return {
+            "total_jobs": 25,
+            "skills": mock_skills,
+            "sample_jobs": [],
+            "source": "EduTrack Mock Cache"
+        }
+
+
+# ---------- Student Progress ----------
+@app.get("/api/student/{student_id}/progress")
+async def get_student_progress(student_id: str):
+    """Get student's progress across all courses"""
+    try:
+        # Get enrollments with progress
+        enrollments = supabase.table("enrollments")\
+            .select("*, courses(title, description)")\
+            .eq("student_id", student_id)\
+            .execute()
+        
+        # Get quiz performance
+        quizzes = supabase.table("quiz_attempts")\
+            .select("*")\
+            .eq("student_id", student_id)\
+            .execute()
+        
+        # Calculate average quiz score
+        quiz_scores = [1 if q.get("is_correct") else 0 for q in quizzes.data]
+        avg_score = sum(quiz_scores) / len(quiz_scores) if quiz_scores else 0
+        
+        # Get last activity
+        activities = supabase.table("activity_log")\
+            .select("*")\
+            .eq("student_id", student_id)\
+            .order("created_at", desc=True)\
+            .limit(1)\
+            .execute()
+        
+        last_active = activities.data[0].get("created_at") if activities.data else None
+        
+        return {
+            "enrollments": enrollments.data,
+            "average_quiz_score": avg_score * 100,
+            "total_quizzes": len(quiz_scores),
+            "last_active": last_active,
+            "at_risk_score": calculate_risk_score(enrollments.data, quiz_scores, last_active)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------- Enroll in Course ----------
+@app.post("/api/enroll")
+async def enroll_student(request: EnrollmentRequest):
+    """Enroll a student in a course"""
+    try:
+        enrollment = supabase.table("enrollments").insert({
+            "student_id": request.student_id,
+            "course_id": request.course_id,
+            "progress_percent": 0,
+            "enrolled_at": datetime.now().isoformat()
+        }).execute()
+        
+        # Log activity
+        supabase.table("activity_log").insert({
+            "student_id": request.student_id,
+            "activity_type": "enrollment",
+            "metadata": {"course_id": request.course_id}
+        }).execute()
+        
+        return {"success": True, "enrollment": enrollment.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------- Submit Quiz ----------
+@app.post("/api/quiz/submit")
+async def submit_quiz(attempt: QuizAttempt):
+    """Record a quiz attempt"""
+    try:
+        result = supabase.table("quiz_attempts").insert({
+            "student_id": attempt.student_id,
+            "course_id": attempt.course_id,
+            "question": attempt.question,
+            "student_answer": attempt.answer,
+            "is_correct": attempt.is_correct,
+            "attempted_at": datetime.now().isoformat()
+        }).execute()
+        
+        # Update enrollment progress (simple logic)
+        enrollment = supabase.table("enrollments")\
+            .select("*")\
+            .eq("student_id", attempt.student_id)\
+            .eq("course_id", attempt.course_id)\
+            .execute()
+        
+        if enrollment.data:
+            current_progress = enrollment.data[0].get("progress_percent", 0)
+            new_progress = min(current_progress + 5, 100)
+            supabase.table("enrollments")\
+                .update({"progress_percent": new_progress})\
+                .eq("student_id", attempt.student_id)\
+                .eq("course_id", attempt.course_id)\
+                .execute()
+        
+        # Log activity
+        supabase.table("activity_log").insert({
+            "student_id": attempt.student_id,
+            "activity_type": "quiz_complete",
+            "metadata": {"course_id": attempt.course_id, "correct": attempt.is_correct}
+        }).execute()
+        
+        return {"success": True, "message": "Quiz recorded"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------- Doubts Forum ----------
+@app.get("/api/doubts/{course_id}")
+async def get_doubts(course_id: str):
+    """Get all doubts for a course"""
+    try:
+        doubts = supabase.table("doubts")\
+            .select("*, profiles(full_name), doubt_replies(*, profiles(full_name))")\
+            .eq("course_id", course_id)\
+            .order("created_at", desc=True)\
+            .execute()
+        return {"doubts": doubts.data}
+    except Exception as e:
+        return {"doubts": []}
+
+@app.post("/api/doubts")
+async def create_doubt(request: DoubtRequest):
+    """Create a new doubt"""
+    try:
+        doubt = supabase.table("doubts").insert({
+            "student_id": request.student_id,
+            "course_id": request.course_id,
+            "question": request.question,
+            "created_at": datetime.now().isoformat()
+        }).execute()
+        return {"success": True, "doubt": doubt.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/doubts/reply")
+async def reply_to_doubt(request: DoubtReply):
+    """Reply to a doubt"""
+    try:
+        reply = supabase.table("doubt_replies").insert({
+            "doubt_id": request.doubt_id,
+            "user_id": request.user_id,
+            "reply": request.reply,
+            "created_at": datetime.now().isoformat()
+        }).execute()
+        
+        # Mark doubt as resolved
+        supabase.table("doubts").update({"is_resolved": True}).eq("id", request.doubt_id).execute()
+        
+        return {"success": True, "reply": reply.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------- At-Risk Students (Instructor Dashboard) ----------
+@app.get("/api/instructor/{instructor_id}/at-risk-students")
+async def get_at_risk_students(instructor_id: str):
+    """Get students at risk of dropping out"""
+    try:
+        # Get courses taught by instructor
+        courses = supabase.table("courses")\
+            .select("id, title")\
+            .eq("instructor_id", instructor_id)\
+            .execute()
+        
+        course_ids = [c["id"] for c in courses.data] if courses.data else []
+        
+        if not course_ids:
+            return {"at_risk_students": []}
+        
+        # Get enrollments for those courses
+        enrollments = supabase.table("enrollments")\
+            .select("*, profiles(full_name, email), courses(title)")\
+            .in_("course_id", course_ids)\
+            .execute()
+        
+        # Calculate risk for each student
+        at_risk = []
+        for enrollment in enrollments.data:
+            student_id = enrollment.get("student_id")
+            
+            # Get quiz performance
+            quizzes = supabase.table("quiz_attempts")\
+                .select("*")\
+                .eq("student_id", student_id)\
+                .execute()
+            
+            quiz_scores = [1 if q.get("is_correct") else 0 for q in quizzes.data]
+            avg_score = sum(quiz_scores) / len(quiz_scores) if quiz_scores else 0
+            
+            # Get last activity
+            activities = supabase.table("activity_log")\
+                .select("*")\
+                .eq("student_id", student_id)\
+                .order("created_at", desc=True)\
+                .limit(1)\
+                .execute()
+            
+            last_active = activities.data[0].get("created_at") if activities.data else None
+            
+            risk_score = calculate_risk_score(
+                [enrollment], 
+                quiz_scores, 
+                last_active
+            )
+            
+            if risk_score > 0.5:
+                days_inactive = 0
+                if last_active:
+                    try:
+                        last_active_clean = last_active.replace('Z', '+00:00')
+                        days_inactive = (datetime.now() - datetime.fromisoformat(last_active_clean)).days
+                    except Exception:
+                        days_inactive = 0
+                
+                at_risk.append({
+                    "student_id": student_id,
+                    "student_name": enrollment.get("profiles", {}).get("full_name", "Unknown"),
+                    "email": enrollment.get("profiles", {}).get("email", ""),
+                    "course_title": enrollment.get("courses", {}).get("title", ""),
+                    "progress": enrollment.get("progress_percent", 0),
+                    "quiz_avg": round(avg_score * 100, 1),
+                    "days_inactive": days_inactive,
+                    "risk_score": round(risk_score * 100, 1)
+                })
+        
+        at_risk.sort(key=lambda x: x["risk_score"], reverse=True)
+        return {"at_risk_students": at_risk[:20]}
+    except Exception as e:
+        return {"at_risk_students": []}
+
+
+# ---------- Admin Dashboard: Market Intelligence ----------
+@app.get("/api/admin/market-intelligence")
+async def admin_market_intelligence():
+    """Get aggregated market insights for admin dashboard"""
+    try:
+        # Get cached market insights from Supabase
+        insights = supabase.table("market_insights")\
+            .select("*")\
+            .order("last_updated", desc=True)\
+            .limit(10)\
+            .execute()
+        
+        # Get trending skills from Himalayas
+        trending_skills = {}
+        for skill in ["python", "aws", "docker", "kubernetes", "react", "devops"]:
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        "https://himalayas.app/jobs/api/search",
+                        params={"country": "in", "query": skill, "limit": 10},
+                        timeout=5.0
+                    )
+                    data = response.json()
+                    trending_skills[skill] = len(data.get("jobs", []))
+            except Exception:
+                trending_skills[skill] = 8 # reasonable fallback
+        
+        return {
+            "cached_insights": insights.data[:5] if insights.data else [],
+            "trending_skills": trending_skills,
+            "last_updated": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {"error": str(e), "trending_skills": {}}
+
+
+# ---------- Health Check ----------
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+
+# ============================================
+# Static File Serving (Frontend Setup)
+# ============================================
+
+# Get absolute path to frontend
+FRONTEND_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
+
+if os.path.exists(FRONTEND_PATH):
+    print(f"[SUCCESS] Frontend directory verified at: {FRONTEND_PATH}")
+    
+    # Custom endpoints for extension-less dashboard routing
+    @app.get("/dashboard")
+    async def serve_dashboard_root():
+        return FileResponse(os.path.join(FRONTEND_PATH, "dashboard.html"))
+    
+    @app.get("/instructor")
+    async def serve_instructor_root():
+        return FileResponse(os.path.join(FRONTEND_PATH, "instructor.html"))
+        
+    @app.get("/admin")
+    async def serve_admin_root():
+        return FileResponse(os.path.join(FRONTEND_PATH, "admin.html"))
+
+    # Mount the directory under root. FastAPI will first match the api/ routes and
+    # dashboard/instructor/admin routes defined above, and then fall back to static files.
+    app.mount("/", StaticFiles(directory=FRONTEND_PATH, html=True), name="frontend")
+else:
+    print(f"[WARNING] Frontend directory NOT found at: {FRONTEND_PATH}")
+
+# ============================================
+# Main Entry Point (for local development)
+# ============================================
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("backend.app:app", host="0.0.0.0", port=8000, reload=True)

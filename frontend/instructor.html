@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instructor Dashboard - EduTrack</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="header">
+        <div class="logo" onclick="location.href='/'">🎓 EduTrack</div>
+        <div class="user-info">
+            <span>👨‍🏫 Prof. Sharma</span>
+            <button class="logout-btn" onclick="logout()">Logout</button>
+        </div>
+    </div>
+    
+    <div class="dashboard-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <!-- Courses List -->
+            <div class="card">
+                <h3>📚 My Courses</h3>
+                <div class="course-list">
+                    <div class="course-card active" onclick="selectInstructorCourse('devops')" id="icourse-devops">
+                        <div class="course-info">
+                            <h4>DevOps Masterclass</h4>
+                            <p>45 students enrolled</p>
+                        </div>
+                    </div>
+                    <div class="course-card" onclick="selectInstructorCourse('aws')" id="icourse-aws">
+                        <div class="course-info">
+                            <h4>AWS Cloud Computing</h4>
+                            <p>32 students enrolled</p>
+                        </div>
+                    </div>
+                    <div class="course-card" onclick="selectInstructorCourse('docker')" id="icourse-docker">
+                        <div class="course-info">
+                            <h4>Docker & Kubernetes</h4>
+                            <p>28 students enrolled</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Quick Stats -->
+            <div class="card">
+                <h3>📈 Quick Stats</h3>
+                <div class="stat-list">
+                    <div class="progress-label">Total Students: <strong>105</strong></div>
+                    <div class="progress-label">Avg Completion: <strong>67%</strong></div>
+                    <div class="progress-label">Students At Risk: <strong class="risk-high" id="riskCountText">12</strong></div>
+                </div>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- At Risk Table -->
+            <div class="card">
+                <h3>🚨 At-Risk Students (Need Immediate Attention)</h3>
+                <div id="atRiskTable">
+                    <div class="loading">Loading at-risk student records...</div>
+                </div>
+            </div>
+            
+            <!-- Engagement Heatmap -->
+            <div class="card">
+                <h3>📊 Student Engagement Heatmap</h3>
+                <div id="heatmap">
+                    <div style="display: flex; gap: 4px; margin-bottom: 16px;">
+                        <div style="flex: 1; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-secondary);">Week 1</div>
+                        <div style="flex: 1; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-secondary);">Week 2</div>
+                        <div style="flex: 1; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-secondary);">Week 3</div>
+                        <div style="flex: 1; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-secondary);">Week 4</div>
+                    </div>
+                    <div class="heatmap-row" style="margin-bottom: 8px;">
+                        <span style="width: 100px; display: inline-block;">Rajesh Kumar</span>
+                        <div style="display: inline-block; width: calc(100% - 110px);">
+                            <span style="display: inline-block; width: 23%; background: #10b981; height: 24px; border-radius: 4px; margin-right: 2%;"></span>
+                            <span style="display: inline-block; width: 23%; background: #10b981; height: 24px; border-radius: 4px; margin-right: 2%;"></span>
+                            <span style="display: inline-block; width: 23%; background: #f59e0b; height: 24px; border-radius: 4px; margin-right: 2%;"></span>
+                            <span style="display: inline-block; width: 23%; background: #f59e0b; height: 24px; border-radius: 4px;"></span>
+                        </div>
+                    </div>
+                    <div class="heatmap-row" style="margin-bottom: 8px;">
+                        <span style="width: 100px; display: inline-block;">Priya Singh</span>
+                        <div style="display: inline-block; width: calc(100% - 110px);">
+                            <span style="display: inline-block; width: 23%; background: #10b981; height: 24px; border-radius: 4px; margin-right: 2%;"></span>
+                            <span style="display: inline-block; width: 23%; background: #10b981; height: 24px; border-radius: 4px; margin-right: 2%;"></span>
+                            <span style="display: inline-block; width: 23%; background: #10b981; height: 24px; border-radius: 4px; margin-right: 2%;"></span>
+                            <span style="display: inline-block; width: 23%; background: #ef4444; height: 24px; border-radius: 4px;"></span>
+                        </div>
+                    </div>
+                    <div class="heatmap-row">
+                        <span style="width: 100px; display: inline-block;">Ramesh Nair</span>
+                        <div style="display: inline-block; width: calc(100% - 110px);">
+                            <span style="display: inline-block; width: 23%; background: #10b981; height: 24px; border-radius: 4px; margin-right: 2%;"></span>
+                            <span style="display: inline-block; width: 23%; background: #f59e0b; height: 24px; border-radius: 4px; margin-right: 2%;"></span>
+                            <span style="display: inline-block; width: 23%; background: #ef4444; height: 24px; border-radius: 4px; margin-right: 2%;"></span>
+                            <span style="display: inline-block; width: 23%; background: #ef4444; height: 24px; border-radius: 4px;"></span>
+                        </div>
+                    </div>
+                </div>
+                <div style="margin-top: 16px; font-size: 12px; color: var(--text-secondary); display: flex; gap: 16px; align-items: center;">
+                    <span style="display: flex; align-items: center; gap: 4px;">
+                        <span style="display: inline-block; width: 16px; height: 12px; background: #10b981; border-radius: 2px;"></span> Active
+                    </span>
+                    <span style="display: flex; align-items: center; gap: 4px;">
+                        <span style="display: inline-block; width: 16px; height: 12px; background: #f59e0b; border-radius: 2px;"></span> Warning
+                    </span>
+                    <span style="display: flex; align-items: center; gap: 4px;">
+                        <span style="display: inline-block; width: 16px; height: 12px; background: #ef4444; border-radius: 2px;"></span> Inactive
+                    </span>
+                </div>
+            </div>
+            
+            <!-- Quiz Analytics -->
+            <div class="card">
+                <h3>📝 Course Quiz Success Rates</h3>
+                <div id="quizAnalytics">
+                    <div class="skill-item">
+                        <span class="skill-name">Docker vs VM</span>
+                        <div class="skill-bar"><div class="skill-bar-fill" style="width: 45%"></div></div>
+                        <span class="skill-count">45% Correct</span>
+                    </div>
+                    <div class="skill-item">
+                        <span class="skill-name">Kubernetes Pods</span>
+                        <div class="skill-bar"><div class="skill-bar-fill" style="width: 28%"></div></div>
+                        <span class="skill-count">28% Correct ⚠️</span>
+                    </div>
+                    <div class="skill-item">
+                        <span class="skill-name">Docker Compose</span>
+                        <div class="skill-bar"><div class="skill-bar-fill" style="width: 62%"></div></div>
+                        <span class="skill-count">62% Correct</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Instructor Doubts Handling -->
+            <div class="card">
+                <h3>💬 Doubts Awaiting Replies</h3>
+                <div id="instructorDoubtsList">
+                    <div class="loading">Loading doubt requests...</div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <script src="/script.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            initializeInstructorDashboard();
+        });
+    </script>
+</body>
+</html>
