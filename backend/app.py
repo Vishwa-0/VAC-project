@@ -16,11 +16,11 @@ load_dotenv()
 # Initialize FastAPI
 app = FastAPI(title="EduTrack API", description="Training Institute Platform")
 
-# CORS Middleware (for Render)
+# CORS Middleware (Fixed for Render and Local Testing)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, replace with your Render URL
-    allow_credentials=True,
+    allow_credentials=False,  # Fixed: Cannot be True when allow_origins is ["*"]
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -201,7 +201,7 @@ async def startup_event():
 
 # ---------- Authentication ----------
 @app.post("/api/auth/signup")
-async def signup(request: SignUpRequest):
+def signup(request: SignUpRequest):
     """Register a new student in the database"""
     if request.role != "student":
         raise HTTPException(status_code=400, detail="Registration is only allowed for students.")
@@ -254,7 +254,7 @@ async def signup(request: SignUpRequest):
         raise HTTPException(status_code=500, detail=f"Registration failed: {err_msg}")
 
 @app.post("/api/auth/signin")
-async def signin(request: SignInRequest):
+def signin(request: SignInRequest):
     """Authenticate student, instructor, or admin credentials"""
     try:
         user_res = supabase.table("profiles")\
@@ -286,7 +286,7 @@ async def signin(request: SignInRequest):
 
 # ---------- Health Check ----------
 @app.get("/api/root")
-async def api_root():
+def api_root():
     return {
         "status": "running",
         "api": "EduTrack API",
@@ -306,9 +306,9 @@ async def api_root():
     }
 
 
-# ---------- Groq Chat API ----------
+# ---------- Groq Chat API (Fixed Sync Threading) ----------
 @app.post("/api/chat")
-async def chat(request: ChatRequest):
+def chat(request: ChatRequest):
     """AI Chatbot endpoint using Groq / Mock AI"""
     try:
         system_prompt = """You are a friendly, patient tutor for a training institute. 
@@ -343,14 +343,14 @@ async def chat(request: ChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ---------- Himalayas Market Insights ----------
+# ---------- Himalayas Market Insights (Fixed Sync Threading) ----------
 @app.get("/api/market-insights")
-async def market_insights(skill: str = None):
+def market_insights(skill: str = None):
     """Get live job market data from Himalayas API with fallback to cached mock data"""
     query = skill if skill else "developer"
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
+        with httpx.Client() as client:
+            response = client.get(
                 "https://himalayas.app/jobs/api/search",
                 params={
                     "country": "in",
@@ -410,7 +410,7 @@ async def market_insights(skill: str = None):
 
 # ---------- Student Progress ----------
 @app.get("/api/student/{student_id}/progress")
-async def get_student_progress(student_id: str):
+def get_student_progress(student_id: str):
     """Get student's progress across all courses"""
     try:
         # Get enrollments with progress
@@ -452,7 +452,7 @@ async def get_student_progress(student_id: str):
 
 # ---------- Enroll in Course ----------
 @app.post("/api/enroll")
-async def enroll_student(request: EnrollmentRequest):
+def enroll_student(request: EnrollmentRequest):
     """Enroll a student in a course"""
     try:
         enrollment = supabase.table("enrollments").insert({
@@ -476,7 +476,7 @@ async def enroll_student(request: EnrollmentRequest):
 
 # ---------- Submit Quiz ----------
 @app.post("/api/quiz/submit")
-async def submit_quiz(attempt: QuizAttempt):
+def submit_quiz(attempt: QuizAttempt):
     """Record a quiz attempt"""
     try:
         result = supabase.table("quiz_attempts").insert({
@@ -518,7 +518,7 @@ async def submit_quiz(attempt: QuizAttempt):
 
 # ---------- Doubts Forum ----------
 @app.get("/api/doubts/{course_id}")
-async def get_doubts(course_id: str):
+def get_doubts(course_id: str):
     """Get all doubts for a course"""
     try:
         doubts = supabase.table("doubts")\
@@ -531,7 +531,7 @@ async def get_doubts(course_id: str):
         return {"doubts": []}
 
 @app.post("/api/doubts")
-async def create_doubt(request: DoubtRequest):
+def create_doubt(request: DoubtRequest):
     """Create a new doubt"""
     try:
         doubt = supabase.table("doubts").insert({
@@ -545,7 +545,7 @@ async def create_doubt(request: DoubtRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/doubts/reply")
-async def reply_to_doubt(request: DoubtReply):
+def reply_to_doubt(request: DoubtReply):
     """Reply to a doubt"""
     try:
         reply = supabase.table("doubt_replies").insert({
@@ -565,7 +565,7 @@ async def reply_to_doubt(request: DoubtReply):
 
 # ---------- At-Risk Students (Instructor Dashboard) ----------
 @app.get("/api/instructor/{instructor_id}/at-risk-students")
-async def get_at_risk_students(instructor_id: str):
+def get_at_risk_students(instructor_id: str):
     """Get students at risk of dropping out"""
     try:
         # Get courses taught by instructor
@@ -643,7 +643,7 @@ async def get_at_risk_students(instructor_id: str):
 
 # ---------- Instructor Dashboard: Quiz Analytics ----------
 @app.get("/api/instructor/{instructor_id}/quiz-analytics")
-async def get_quiz_analytics(instructor_id: str):
+def get_quiz_analytics(instructor_id: str):
     """Aggregate quiz success rates for the instructor's courses"""
     try:
         courses = supabase.table("courses").select("id").eq("instructor_id", instructor_id).execute()
@@ -684,7 +684,7 @@ async def get_quiz_analytics(instructor_id: str):
 
 # ---------- Instructor Dashboard: Engagement Heatmap ----------
 @app.get("/api/instructor/{instructor_id}/engagement-heatmap")
-async def get_engagement_heatmap(instructor_id: str):
+def get_engagement_heatmap(instructor_id: str):
     """Calculate weekly student activities for the past 4 weeks"""
     try:
         courses = supabase.table("courses").select("id").eq("instructor_id", instructor_id).execute()
@@ -723,7 +723,6 @@ async def get_engagement_heatmap(instructor_id: str):
             s_logs = [l for l in (logs.data or []) if l.get("student_id") == sid]
             
             # Count activities per week
-            # Week 0: 0-7 days ago, Week 1: 8-14 days ago, Week 2: 15-21 days ago, Week 3: 22-28 days ago
             weekly_counts = [0, 0, 0, 0]
             for log in s_logs:
                 try:
@@ -766,7 +765,7 @@ async def get_engagement_heatmap(instructor_id: str):
 
 # ---------- Instructor Dashboard: Repetitive Queries ----------
 @app.get("/api/instructor/{instructor_id}/repetitive-queries")
-async def get_repetitive_queries(instructor_id: str):
+def get_repetitive_queries(instructor_id: str):
     """Analyze student chat queries and forum doubts to find repetitive issues"""
     try:
         courses = supabase.table("courses").select("id").eq("instructor_id", instructor_id).execute()
@@ -819,9 +818,9 @@ async def get_repetitive_queries(instructor_id: str):
         return {"keyword_frequencies": [], "sample_doubts": [], "total_queries": 0}
 
 
-# ---------- Student Dashboard: Available Courses ----------
+# ---------- Student Dashboard: Available Courses (Completed) ----------
 @app.get("/api/courses/available")
-async def get_available_courses(student_id: str):
+def get_available_courses(student_id: str):
     """Get all courses the student is NOT currently enrolled in"""
     try:
         # Get all courses
@@ -835,100 +834,27 @@ async def get_available_courses(student_id: str):
             
         enrolled_ids = [e["course_id"] for e in enrollments.data] if enrollments.data else []
         
-        available = []
-        for course in (all_courses.data or []):
-            if course["id"] not in enrolled_ids:
-                instructor_name = course.get("profiles", {}).get("full_name") if course.get("profiles") else "Prof. Sharma"
-                available.append({
-                    "id": course["id"],
-                    "title": course["title"],
-                    "description": course["description"],
-                    "instructor_name": instructor_name
-                })
-                
-        return {"available_courses": available}
+        # Filter out courses the student is already enrolled in
+        available_courses = [
+            course for course in (all_courses.data or [])
+            if course.get("id") not in enrolled_ids
+        ]
+        
+        return {"available_courses": available_courses}
     except Exception as e:
-        return {"available_courses": []}
-
-
-# ---------- Instructor Stats (real DB counts) ----------
-@app.get("/api/instructor/{instructor_id}/stats")
-async def instructor_stats(instructor_id: str):
-    """Return real counts for instructor dashboard"""
-    try:
-        courses_res = supabase.table("courses").select("id, title").eq("instructor_id", instructor_id).execute()
-        course_ids = [c["id"] for c in courses_res.data] if courses_res.data else []
-
-        total_enrolled = 0
-        avg_completion = 0
-        course_list = []
-
-        if course_ids:
-            enrollments_res = supabase.table("enrollments").select("*").in_("course_id", course_ids).execute()
-            total_enrolled = len(enrollments_res.data) if enrollments_res.data else 0
-
-            if enrollments_res.data:
-                avg_completion = round(
-                    sum(e.get("progress_percent", 0) for e in enrollments_res.data) / len(enrollments_res.data)
-                )
-
-            for c in courses_res.data:
-                cid = c["id"]
-                title = c["title"]
-                cnt = len([e for e in (enrollments_res.data or []) if e.get("course_id") == cid])
-                course_list.append({
-                    "id": cid,
-                    "title": title,
-                    "students_enrolled": cnt
-                })
-
-        return {
-            "total_students": total_enrolled,
-            "total_courses": len(course_ids),
-            "avg_completion": avg_completion,
-            "courses": course_list
-        }
-    except Exception as e:
-        return {
-            "total_students": 0, "total_courses": 0,
-            "avg_completion": 0, "courses": []
-        }
-
-
-# ---------- Health Check ----------
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ============================================
-# Static File Serving (Frontend Setup)
+# Serve Frontend Static Files
 # ============================================
+# Mount static files route at the very bottom so API paths take structural priority.
+static_dir = os.path.join(os.path.dirname(__file__), "static")
 
-# Get absolute path to frontend
-FRONTEND_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
+if os.path.exists(static_dir):
+    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
-if os.path.exists(FRONTEND_PATH):
-    print(f"[SUCCESS] Frontend directory verified at: {FRONTEND_PATH}")
-    
-    # Custom endpoints for extension-less dashboard routing
-    @app.get("/dashboard")
-    async def serve_dashboard_root():
-        return FileResponse(os.path.join(FRONTEND_PATH, "dashboard.html"))
-    
-    @app.get("/instructor")
-    async def serve_instructor_root():
-        return FileResponse(os.path.join(FRONTEND_PATH, "instructor.html"))
-
-    # Mount the directory under root. FastAPI will first match the api/ routes and
-    # dashboard/instructor/admin routes defined above, and then fall back to static files.
-    app.mount("/", StaticFiles(directory=FRONTEND_PATH, html=True), name="frontend")
-else:
-    print(f"[WARNING] Frontend directory NOT found at: {FRONTEND_PATH}")
-
-# ============================================
-# Main Entry Point (for local development)
-# ============================================
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("backend.app:app", host="0.0.0.0", port=8000, reload=True)
+    # Catch-all fallback route to safely manage client-side SPA UI routing (React/Vue)
+    @app.get("/{catchall:path}")
+    def serve_frontend(request: Request):
+        return FileResponse(os.path.join(static_dir, "index.html"))
